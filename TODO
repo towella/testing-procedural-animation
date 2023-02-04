@@ -1,0 +1,4 @@
+o pause when screen is inactive - pygame.display.get_active()
+o create menu and menu page classes. Create child classes for common menus like generic pause and settings
+o investigate warping of pixels depending on screen sizing and fullscreen
+o make interactives class better
