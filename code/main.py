@@ -14,7 +14,7 @@ pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 pygame.mixer.init()
 clock = pygame.time.Clock()
-pygame.mouse.set_visible(False)
+#pygame.mouse.set_visible(False)
 
 # window and screen Setup ----- window is real pygame window. screen is surface everything is placed on then resized
 # to blit on window. (art pixel == game pixel)
@@ -72,6 +72,7 @@ def game():
 
         # x and y mouse pos
         mx, my = pygame.mouse.get_pos()
+        mouse_pos = (mx // scaling_factor, my // scaling_factor)
 
         # -- INPUT --
         click = False
@@ -109,7 +110,7 @@ def game():
 
         # -- Update --
         screen.fill((48, 99, 142))  # fill background with colour
-        level.update(dt, fps)  # runs level processes
+        level.update(mouse_pos, dt, fps)  # runs level processes
 
         font.render(f'FPS: {str(clock.get_fps())}', screen, (0, 0))  # TODO Debugging only, remove
 

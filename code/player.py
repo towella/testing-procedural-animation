@@ -1,32 +1,33 @@
-import pygame
+import pygame, math
 from game_data import tile_size, controller_map
 from lighting import Light
-from support import raycast, pos_for_center
+from support import get_angle, get_distance
 
 
 # SET UP FOR PLATFORMER SINCE PLATFORMERS ARE HARDER TO CREATE A PLAYER FOR
 class Player(pygame.sprite.Sprite):
-    def __init__(self, spawn, surface, controllers):
+    def __init__(self, spawn, surface, segments, segment_spacing, controllers):
         super().__init__()
         self.surface = surface
         self.controllers = controllers
 
         # -- player setup --
-        self.image = pygame.Surface((tile_size, tile_size * 1.5))
-        self.image.fill((255, 88, 98))
-        self.rect = pygame.Rect(spawn.x, spawn.y, self.image.get_width(), self.image.get_height())
-        self.light_distance = 40
-        self.lights = [Light(self.surface, self.rect.center, (10, 10, 10), False, 40, 30, 0.02),
-                       Light(self.surface, self.rect.center, (20, 20, 20), False, 25, 20, 0.02)]
-        # - hitboxes -
-        self.norm_hitbox = pygame.Rect(self.rect.midbottom[0], self.rect.midbottom[1], tile_size * 0.8, tile_size * 1.4)  # used for collisions
-        self.crouch_hitbox = pygame.Rect(self.rect.midbottom[0], self.rect.midbottom[1], tile_size * 0.8, tile_size * 0.8)  # used for crouched collisions
-        self.hitbox = self.norm_hitbox  # used for collisiona and can be different to rect and image
+        self.speed = 3
+        self.seg_spacing = segment_spacing
+        self.max_seg_speed = 5
+        self.points = []
+        self.points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_seg_speed))
+        for i in range(segments - 1):
+            segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
+            if segment_spacing < 1:  # TODO TEST REMOVE
+                segment_spacing = 1  # TODO TEST REMOVE
+            self.points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_seg_speed, self.points[i]))
+        self.head = self.points[0]
 
-        if spawn.player_facing == 'right':
-            self.facing_right = 1
-        else:
-            self.facing_right = -1
+        self.light_distance = 40
+        self.lights = [Light(self.surface, self.head.pos, (10, 10, 10), False, 40, 30, 0.02),
+                       Light(self.surface, self.head.pos, (20, 20, 20), False, 25, 20, 0.02)]
+
         self.respawn = False
 
         # -- player movement --
@@ -36,136 +37,10 @@ class Player(pygame.sprite.Sprite):
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
         self.vertical_corner_correction_boost = 4
 
-        # - walk -
-        self.speed_x = 2.5
-        self.right_pressed = False
-        self.left_pressed = False
-
-        # - dash -
-        self.dashing = False  # NOT REDUNDANT. IS NECCESSARY. Allows resetting timer while dashing. Also more readable code
-        self.dash_speed = 4
-        self.dash_pressed = False  # if the dash key is being pressed
-        self.dash_max = 12  # max time of dash in frames
-        self.dash_timer = self.dash_max  # maxed out to prevent being able to dash on start. Only reset on ground
-        self.dash_dir_right = True  # stores the dir for a dash. Prevents changing dir during dash. Only dash cancels
-        # - buffer dash -
-        self.buffer_dash = False  # is a buffer dash cued up
-        self.dashbuff_max = 5  # max time a buffered dash can be cued before it is removed (in frames)
-        self.dashbuff_timer = self.dashbuff_max  # times a buffered dash from input (starts on max to prevent jump being cued on start)
-
-        # -- gravity and falling --
-        self.on_ground = False
-        self.fall_timer = 0  # timer for how long the player has had a positive y vel and not on ground
-        # - terminal vel -
-        self.norm_terminal_vel = 10 # normal terminal vel
-        self.terminal_vel = self.norm_terminal_vel  # maximum fall speed. if higher than self.collision_tolerance, will allow phasing :(
-        # - gravity -
-        self.gravity = 0.4
-        self.fall_gravity = 1
-
-        # -- Jump --
-        # HEIGHT OF JUMP THEN MINIMUM JUMP
-        self.jumping = False  # true when initial hop has been completed, allowing held jump.false if key up or grounded
-        # verifies jump is already in progress (jump_timer is reset every time key down)
-        self.jump_speed = 5  #294  # controls initial jump hop and height of hold jump
-        self.jump_pressed = False  # if any jump key is pressed
-        self.jump_max = 12  # max time a jump can be held
-        self.jump_hold_timer = self.jump_max  # amount of time jump has been held. Not related to allowing initial jumps
-
-        # - double jump -
-        self.can_double_jump = True
-        # - coyote time -
-        self.coyote_timer = 0  # times the frames since left the floor
-        self.coyote_max = 5  # maximum time for a coyote jump to occur
-        # - buffer jump -
-        self.jumpbuff_max = 10  # max time a buffered jump can be cued before it is removed (in frames)
-
-        self.jump_timer = self.jumpbuff_max  # Time since last jump input if jump not yet executed. (allows initial jump)
-        # Used to time jumps (including buffered jumps and wall jumps) from input
-        # if jump timer == 0, means button has just been pressed. Used to ensure button isnt being held
-        # if jump timer > 0 and not on_ground, means player is jumping or falling after jump
-        # if jump timer == 0 in air, buffer jump has been cued up
-        # (starts on max to prevent buffer jump being cued on start)
-
-        # -- Crouch --
-        self.crouching = False
-        self.crouch_speed = 1  # speed of walk when crouching
-
 # -- checks --
 
     def get_input(self, dt, tiles):
-        self.direction.x = 0
         keys = pygame.key.get_pressed()
-
-        #### horizontal movement ####
-        # -- walk --
-        # the not self.'side'_pressed prevents holding a direction and hitting the other at the same time to change direction
-        if (keys[pygame.K_d] or self.get_controller_input('right')) and not self.left_pressed:
-            if not self.crouching:
-                self.direction.x = self.speed_x
-            else:
-                self.direction.x = self.crouch_speed
-            self.facing_right = 1
-            self.right_pressed = True
-        else:
-            self.right_pressed = False
-
-        if (keys[pygame.K_a] or self.get_controller_input('left')) and not self.right_pressed:
-            if not self.crouching:
-                self.direction.x = -self.speed_x
-            else:
-                self.direction.x = -self.crouch_speed
-            self.facing_right = -1
-            self.left_pressed = True
-        else:
-            self.left_pressed = False
-
-        # -- dash --
-        # if wanting to dash and not holding the button
-        if (keys[pygame.K_PERIOD] or self.get_controller_input('dash')) and not self.dash_pressed:
-            # if only just started dashing, dashing is true and dash direction is set. Prevents changing dash dir during dash
-            if not self.dashing:
-                self.dashing = True
-                self.dash_dir_right = self.facing_right
-            self.dashbuff_timer = 0  # set to 0 ready for next buffdash
-            self.dash_pressed = True
-        # neccessary to prevent repeated dashes on button hold
-        elif not keys[pygame.K_PERIOD] and not self.get_controller_input('dash'):
-            self.dash_pressed = False
-
-        self.dash(dt)
-
-        #### vertical movement ####
-        # -- jump --
-        # input
-        if keys[pygame.K_w] or keys[pygame.K_SPACE] or self.get_controller_input('jump'):
-            # if jump wasnt previously pressed, allow jump (also dependent on other variable in function)
-            # set jump_pressed to true
-            # prevents continuous held jumps
-            if not self.jump_pressed:
-                self.jump_timer = 0  # set to 0 ready for next buffjump, used to prove not holding button
-                self.jump_hold_timer = 0
-            self.jump_pressed = True
-        # jump keys up
-        else:
-            self.jumping = False
-            self.jump_hold_timer = self.jump_max
-            self.jump_pressed = False
-
-        self.jump(dt)
-
-        # -- crouch --
-        # if wanting to crouch AND on the ground (so as to avoid glide)
-        if (keys[pygame.K_s] or self.get_controller_input('crouch')) and self.on_ground:
-            self.crouching = True
-        else:
-            self.crouching = False
-
-        self.crouch(tiles)
-
-        # TODO testing, remove
-        if keys[pygame.K_r] or self.get_controller_input('dev'):
-            self.invoke_respawn()
 
     # checks controller inputs and returns true or false based on passed check
     # pygame controller docs: https://www.pygame.org/docs/ref/joystick.html
@@ -224,111 +99,6 @@ class Player(pygame.sprite.Sprite):
         self.respawn = False
 
 # -- movement methods --
-
-    def dash(self, dt):
-        # - reset -
-        # reset dash, on ground OR if on the wall and dash completed (not dashing) - allows dash to finish before clinging
-        # reset despite button pressed or not (not dependant on button, can only dash with button not pressed)
-        if self.on_ground or (self.on_wall and not self.dashing):
-            self.dash_timer = 0
-        # - setup buffer dash - (only when not crouching)
-        # self.dashing is set to false when buffdash is cued. Sets to true on ground so that it can start a normal dash,
-        # which resets buffer dashing variables ready for next one
-        if self.on_ground and self.dashbuff_timer < self.dashbuff_max and not self.crouching:
-            self.dashing = True
-        # - start normal dash or continue dash - (only when not crouching)
-        # (if dashing and dash duration not exceeded OR buffered dash) AND not crouching, allow dash
-        if self.dashing and self.dash_timer < self.dash_max and not self.crouching:
-            # - norm dash -
-            # add velocity based on facing direction determined at start of dash
-            # self.dash_dir_right multiplies by 1 or -1 to change direction of dash speed distance
-            self.direction.x += self.dash_speed * self.dash_dir_right
-            # dash timer increment
-            self.dash_timer += round(1 * dt)
-
-            # - buffer -
-            # reset buffer jump with no jump cued
-            self.buffer_dash = False
-            self.dashbuff_timer = self.dashbuff_max
-        # - kill -
-        # if not dashing or timer exceeded, end dash but don't reset timer (prevents multiple dashes in the air)
-        else:
-            self.dashing = False
-
-        # -- buffer dash timer --
-        # cue up dash if dash button pressed (if dash is already allowed it will be maxed out in the dash code)
-        # OR having already cued, continue timing
-        if (self.dashbuff_timer == 0) or self.buffer_dash:
-            self.dashbuff_timer += round(1 * dt)
-            self.buffer_dash = True
-
-    # physics maths from clearcode platformer tut (partly)
-    def jump(self, dt):
-        # -- coyote time --
-        if self.on_ground:
-            self.coyote_timer = 0  # resets timer on the ground
-        else:
-            self.coyote_timer += round(1 * dt)  # increments when not on the ground
-
-        # - reset -
-        if self.on_ground:
-            self.jumping = False
-        if self.on_ground or self.on_wall:
-            self.can_double_jump = True
-
-        # - execute initial hop and allow jump extension (norm, buffer and coyote) -
-        # if on the ground and want to jump
-        # OR on the ground and within buffer jump window,
-        # OR within coyote time window and want to jump
-        # OR double jump
-        elif (self.on_ground and self.jump_timer == 0) or \
-                (self.on_ground and self.jump_timer < self.jumpbuff_max) or \
-                (self.jump_timer == 0 and self.coyote_timer < self.coyote_max) or \
-                (self.jump_timer == 0 and self.can_double_jump):
-
-            # - double jump -
-            # if not on the ground and coyote window expired and has been able to jump,
-            # must be double jumping, so prevent more double jumps
-            if not self.on_ground and self.coyote_timer >= self.coyote_max:
-                self.can_double_jump = False
-                self.direction.y = 0
-
-            # - coyote -
-            self.coyote_timer = self.coyote_max  # prevents another coyote jump in mid air
-
-            # - buffer jump -
-            self.jump_hold_timer = 0  # Resets timer so buffjump has same extend window as norm.
-            self.jump_timer = self.jumpbuff_max  # prevents repeated unwanted buffer jumps.
-
-            # - norm jump - (start the jump)
-            self.on_ground = False  # neccessary to prevent direction being cancelled by gravity on ground code later in loop
-            self.direction.y = -self.jump_speed
-            self.jumping = True  # verifies that a jump is in progress
-
-        # - extend jump (variable height) -
-        # if already jumping (has hopped) and not exceeding max jump and want to jump still
-        elif self.jumping and self.jump_hold_timer < self.jump_max and self.jump_pressed:
-            self.direction.y = -self.jump_speed
-
-        self.jump_timer += round(1 * dt)  # increments the timer (time since jump input if jump hasnt been executed yet)
-        self.jump_hold_timer += round(1 * dt)  # increments timer (time jump has been held for)
-
-    def crouch(self, tiles):
-        if self.crouching:
-            # change to crouched hitbox and sync to the same pos as previous hitbox (using rect midbottom)
-            self.hitbox = self.crouch_hitbox
-            self.sync_hitbox()
-        # - exception case (if not crouching but should be forced to cause under platform) -
-        else:
-            # if normal hitbox top collides with a tile, make crouched
-            for tile in tiles:
-                if tile.hitbox.colliderect(self.norm_hitbox):
-                    if abs(tile.hitbox.bottom - self.norm_hitbox.top) < self.collision_tolerance:
-                        # change to crouched hitbox and sync to the same pos as previous hitbox (using rect midbottom)
-                        self.hitbox = self.crouch_hitbox
-                        self.sync_hitbox()
-                        self.crouching = True
-                        break
 
 # -- update methods --
 
@@ -496,47 +266,138 @@ class Player(pygame.sprite.Sprite):
         self.rect.y -= int(scroll_value[0])
         self.sync_hitbox()
 
-    def update(self, dt, tiles, scroll_value, current_spawn):
-        self.terminal_vel = self.norm_terminal_vel  # resets terminal vel for next frame. Allows wall cling and glide to
+    def update(self, mouse_pos, dt): #, scroll_value, current_spawn):
         # reset without interfering with each other.
-        self.hitbox = self.norm_hitbox  # same with hitbox as terminal vel
-        self.sync_hitbox()  # just in case
+        #self.hitbox = self.norm_hitbox  # same with hitbox as terminal vel
+        #self.sync_hitbox()  # just in case
 
         # respawns player if respawn has been evoked
-        if self.respawn:
-            self.player_respawn(current_spawn)
+        #if self.respawn:
+            #self.player_respawn(current_spawn)
 
         # -- INPUT --
-        self.get_input(dt, tiles)
+        #self.get_input(dt, tiles)
 
         # -- CHECKS/UPDATE --
 
         # - collision and movement -
+        # MOVEMENT
+        for i in range(len(self.points)):
+            if i > 0:
+                self.points[i].update(self.points[i - 1])
+            else:
+                self.points[i].update(mouse_pos)
+
+        # COLLISIONS
         # applies direction to player then resyncs hitbox (included in most movement/collision functions)
         # HITBOX MUST BE SYNCED AFTER EVERY MOVE OF PLAYER RECT
         # x and y collisions are separated to make diagonal collisions easier and simpler to handle
         # x
-        self.rect.x += round(self.direction.x * dt)
-        self.sync_hitbox()
-        self.collision_x(self.hitbox, tiles)
+        '''self.sync_hitbox()
+        self.collision_x(self.hitbox, tiles)'''
 
         # y
         # applies direction to player then resyncs hitbox
-        self.apply_y_direction(dt)  # gravity
-        self.collision_y(self.hitbox, tiles)
+        '''self.apply_y_direction(dt)  # gravity
+        self.collision_y(self.hitbox, tiles)'''
 
         # scroll shouldn't have collision applied, it is separate movement
-        self.apply_scroll(scroll_value)
+        #self.apply_scroll(scroll_value)
 
         # light (after movement and scroll so pos is accurate)
         for light in self.lights:
-            light.update(dt, self.rect.center, tiles)
+            light.update(dt, self.head.get_pos(), None)
 
 # -- visual methods --
 
     def draw(self):
+        for point in self.points:
+            point.draw()
         for light in self.lights:
             light.draw()
 
-        self.surface.blit(self.image, self.rect)
+
+class Body_Segment:
+    def __init__(self, surface, pos, segment_spacing, max_move_speed, parent_body_segment=None):
+        self.surface = surface
+        self.pos = [pos[0], pos[1]]
+        self.prev_pos = self.pos
+        self.move_speed = max_move_speed  # for head only
+
+        self.parent_seg = parent_body_segment
+
+        self.seg_spacing = segment_spacing
+
+        if self.parent_seg is None:
+            self.head = True
+        else:
+            self.head = False
+
+    def adjusted_distance(self, point):
+        # work out how far P1 needs to move towards P2 (target) while still being spaced appropriately
+        hyp = get_distance(self.pos, point)
+        hyp -= self.seg_spacing
+        return hyp
+
+    def move(self, point, displacement):
+        angle = get_angle(self.pos, point)
+
+        # - Limit angle (limit segment joint's flex) -
+        '''p2, p3 = None, None  # default to none for both points
+        p2 = self.child_seg
+        if p2 is not None:
+            p3 = p2.get_child()
+        # checks is not the second last or last segments, where angle doesn't matter
+        if p3 is not None and p2 is not None:
+            # get positions rather than objects
+            p2 = p2.get_pos()
+            p3 = p3.get_pos()
+
+            child_angle = get_angle(p3, p2)  # angle of p2 (child) from p3 (child's child)
+            flex = abs(angle - child_angle)  # displacement angle, direction doesnt matter
+            if flex > self.max_flex:
+                if angle > child_angle:
+                    angle -= angle - self.max_flex
+                elif angle < child_angle:
+                    angle += angle + self.max_flex'''
+
+        angle += 90  # rotate the entire unit circle so + and - numbers are produced on the desired sides
+        angle = math.radians(angle)
+
+        # - Move point -
+        # get how much the x and y should be changed by (so the total displacement is always constant)
+        if self.head and displacement > self.move_speed:  # limit movement displacement towards cursor for head
+            displacement = self.move_speed
+
+        # calculate how much the individual x and y coord should be modified for a total displacement in given direction
+        x = math.sin(angle) * displacement
+        y = math.cos(angle) * displacement
+        self.pos[0] += x
+        self.pos[1] += y
+
+    # --- GETTERS AND SETTERS ---
+
+    def get_prev_pos(self):
+        return self.prev_pos
+
+    def get_pos(self):
+        return self.pos
+
+    # --- UPDATE AND DRAW ---
+
+    def update(self, point=(0, 0)):
+        if not self.head:
+            point = self.parent_seg.get_prev_pos()
+        self.prev_pos = self.pos
+
+        # moves towards point based on spacing
+        hyp = self.adjusted_distance(point)
+        self.move(point, hyp)
+
+    def draw(self):
+        if self.head:
+            pygame.draw.circle(self.surface, 'purple', self.pos, 3)
+        else:
+            pygame.draw.circle(self.surface, 'green', self.pos, 1)
+        pygame.draw.circle(self.surface, 'orange', self.pos, self.seg_spacing // 2, 1)
 

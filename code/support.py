@@ -152,22 +152,18 @@ def get_rect_corners(rect):
 
 # returns angle of point from pos in DEGREES
 def get_angle(pos, point):
-    angle = math.atan2(point[1] - pos[1], point[0] - pos[0])
-    angle *= 180 / math.pi  # converts to degrees
-
-    # makes the angle produced by tan in any qudarant relative to 0 DEG and positive.
+    # negative y values to flip the y axis from cartesian to pygame axis (reversed)
+    angle = math.degrees(math.atan2(-point[1] - -pos[1], point[0] - pos[0]))
+    # makes the angle produced by tan in any quadrant relative to 0 DEG and positive (0 - 360)
     if angle < 0:
-        angle = 180 + angle
-    if pos[1] - point[1] < 0:
-        angle += 180
-
+        angle = 360 - abs(angle)
     return angle
 
 
 def get_distance(pos, point):
     x = point[0] - pos[0]
     y = point[1] - pos[1]
-    return abs(math.hypot(x, y))
+    return math.sqrt(x**2 + y**2)
 
 
 # crops a surface out of a larger surface (usefull for images)

@@ -33,6 +33,10 @@ class Level:
 
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
+        body_segments = 12
+        segment_spacing = 20
+        self.player = Player((70, 70), self.screen_surface, body_segments, segment_spacing, self.controllers)
+
         # - get level data -
         '''tmx_data = load_pygame(resource_path(level_data))  # tile map file
         self.all_sprites = pygame.sprite.Group()  # contains all sprites for ease of updating/scrolling
@@ -174,10 +178,9 @@ class Level:
 
     # updates the level allowing tile scroll and displaying tiles to screen
     # order is equivalent of layers
-    def update(self, dt, fps):
+    def update(self, mouse_pos, dt, fps):
         # #### INPUT > GAME(checks THEN UPDATE) > RENDER ####
         # checks deal with previous frames interactions. Update creates interactions for this frame which is then diplayed
-        '''player = self.player.sprite'''
 
         # -- INPUT --
         self.get_input()
@@ -210,13 +213,13 @@ class Level:
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
             # TODO IF TILES_IN_SCREEN ATTR IS CHANGED TO INCLUDE MORE LAYERS, CHANGE BACK TO self.collideable HERE!!!!
-            '''player.update(dt, self.tiles_in_screen, scroll_value, self.player_spawn)
-            self.all_sprites.update(scroll_value)'''
+            self.player.update(mouse_pos, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            #self.all_sprites.update(scroll_value)'''
 
         # -- RENDER --
         # Draw
-        '''self.player.sprite.draw()
-        self.draw_tile_group(self.collideable)
+        self.player.draw()
+        '''self.draw_tile_group(self.collideable)
         self.draw_tile_group(self.hazards)'''
 
         # must be after other renders to ensure menu is drawn last
