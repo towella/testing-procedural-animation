@@ -33,9 +33,15 @@ class Level:
 
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
-        body_segments = 12
+        body_segments = 5
         segment_spacing = 20
         self.player = Player((70, 70), self.screen_surface, body_segments, segment_spacing, self.controllers)
+
+        # TODO testing
+        self.tile = pygame.sprite.Group()
+        image = pygame.Surface((tile_size, tile_size))
+        image.fill("red")
+        self.tile.add(CollideableTile((40, 40), (tile_size, tile_size), 0, image))
 
         # - get level data -
         '''tmx_data = load_pygame(resource_path(level_data))  # tile map file
@@ -213,12 +219,13 @@ class Level:
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
             # TODO IF TILES_IN_SCREEN ATTR IS CHANGED TO INCLUDE MORE LAYERS, CHANGE BACK TO self.collideable HERE!!!!
-            self.player.update(mouse_pos, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            self.player.update(self.tile, mouse_pos, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
             #self.all_sprites.update(scroll_value)'''
 
         # -- RENDER --
         # Draw
         self.player.draw()
+        self.draw_tile_group(self.tile)
         '''self.draw_tile_group(self.collideable)
         self.draw_tile_group(self.hazards)'''
 

@@ -4,11 +4,11 @@ from support import import_folder
 
 # base tile class with block fill image and normal surface support (also used for images, i.e, one big tile)
 class StaticTile(pygame.sprite.Sprite):
-    def __init__(self, pos, size, parallax, surface=None):
+    def __init__(self, pos, size, parallax, image_surface=None):
         super().__init__()
         self.original_pos = pos
-        if surface:
-            self.image = surface
+        if image_surface:
+            self.image = image_surface
         else:
             self.image = pygame.Surface((size[0], size[1]))  # creates tile
             self.image.fill('grey')  # makes tile grey
