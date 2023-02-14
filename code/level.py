@@ -33,7 +33,7 @@ class Level:
 
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
-        body_segments = 5
+        body_segments = 20
         segment_spacing = 20
         self.player = Player((70, 70), self.screen_surface, body_segments, segment_spacing, self.controllers)
 

@@ -360,24 +360,25 @@ class Body_Segment:
 
         # - Limit angle (limit segment joint's flex) -
         # relative_angle = the new angle - the neutral alignment from last frame before changing to face point
-        relative_angle = angle - self.rot
-        # relative angle should always be less than 180
-        if relative_angle > 180:
-            relative_angle = -(180 - (relative_angle - 180))
-        elif relative_angle < -180:
-            relative_angle = 180 + (relative_angle + 180)
-
-        # TODO head and other segs are all the same now?? no parents required anymore!
-        '''#else:
-            #prev_point = self.parent_seg.get_prev_pos()  # get parent position before movement
-            #prev_alignment = get_angle(self.pos, prev_point)  # get neutral alignment angle from before parent moved
-            #relative_angle = angle - prev_alignment  # 'displacement' angle from neutral. + or - indicates > or < neutral'''
-        # limit rotation
-        '''if abs(relative_angle) > self.max_flex:
-            if relative_angle > 0:
-                angle = self.rot + self.max_flex
-            elif relative_angle < 0:
-                angle = self.rot - self.max_flex'''
+        if self.head:
+            child_rot = self.child_seg.get_rot()
+            relative_angle = angle - child_rot
+            # relative angle should always be less than 180
+            if relative_angle > 180:
+                relative_angle = -(180 - (relative_angle - 180))
+            elif relative_angle < -180:
+                relative_angle = 180 + (relative_angle + 180)
+            # TODO head and other segs are all the same now?? no parents required anymore!
+            '''#else:
+                #prev_point = self.parent_seg.get_prev_pos()  # get parent position before movement
+                #prev_alignment = get_angle(self.pos, prev_point)  # get neutral alignment angle from before parent moved
+                #relative_angle = angle - prev_alignment  # 'displacement' angle from neutral. + or - indicates > or < neutral'''
+            # limit rotation
+            if abs(relative_angle) > self.max_flex:
+                if relative_angle > 0:
+                    angle = child_rot + self.max_flex
+                elif relative_angle < 0:
+                    angle = child_rot - self.max_flex
 
         # - update and adjust angles -
         self.rot = angle  # update segment rotation
@@ -502,6 +503,9 @@ class Body_Segment:
 
     def get_child(self):
         return self.child_seg
+
+    def get_rot(self):
+        return self.rot
 
     def set_child(self, seg_obj):
         self.child_seg = seg_obj
