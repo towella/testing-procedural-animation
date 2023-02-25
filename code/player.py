@@ -17,12 +17,12 @@ class Player(pygame.sprite.Sprite):
         self.max_seg_speed = 5
         self.max_flex = 30
         self.points = []
-        self.points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed))
+        self.points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True))
         for i in range(segments - 1):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
-            self.points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, self.points[i]))
+            self.points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, self.points[i]))
             self.points[i].set_child(self.points[i + 1])  # max i is length of points - 1 (head is added before loop)
             # therefore child of last point (i) is i + 1
         self.head = self.points[0]
@@ -323,7 +323,7 @@ class Player(pygame.sprite.Sprite):
 
 
 class Body_Segment:
-    def __init__(self, surface, pos, segment_spacing, max_flex, max_move_speed, parent_body_segment=None):
+    def __init__(self, surface, pos, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
         self.surface = surface  # segment render surface
         self.pos = [pos[0], pos[1]]  # segment position
         self.prev_pos = self.pos
@@ -331,20 +331,40 @@ class Body_Segment:
         self.direction = pygame.Vector2(0, 0)  # tracks segment movement
         self.rot = 0  # keeps track of segment rotation
 
+        # parent/child
         self.parent_seg = parent_body_segment
         self.child_seg = None
 
+        # legs
+        self.has_legs = legs
+        # TODO should these be intialised with a point??
+        self.lfoot = None
+        self.rfoot = None
+        self.lfoot_target = None
+        self.rfoot_target = None
+        self.rfoot_move = False
+        self.lfoot_move = False
+        if self.has_legs:
+            # TODO testing make better later
+            self.lfoot = [self.pos[0], self.pos[1]]
+            self.rfoot = [self.pos[0], self.pos[1]]
+
+        self.max_leg_distance = 60  # maximum amount of frames legs will stay still when moving TODO make input param
+        self.leg_distances = [0, 0]
+
+        # segment values
         self.seg_spacing = segment_spacing
         self.max_flex = max_flex
         self.radius = self.seg_spacing // 2  # collisions and drawn circle
-        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
-        self.collision_tolerance = tile_size
-        self.corner_correction = 3
-
         if self.parent_seg is None:
             self.head = True
         else:
             self.head = False
+
+        # collision
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
+        self.collision_tolerance = tile_size
+        self.corner_correction = 3
 
     # --- MOVEMENT ---
 
@@ -392,6 +412,81 @@ class Body_Segment:
         # calculate how much the individual x and y coord should be modified for a total displacement in given direction
         self.direction.x += math.sin(angle) * displacement
         self.direction.y += math.cos(angle) * displacement
+
+    # --- LEGS ---
+
+    # TODO OPTIMISE ESPECIALLY USE OF TRIG
+    def calculate_legs(self):
+        rotation = math.radians(self.rot)
+        relative_angle = 50  # TODO make param
+        left_angle = math.radians(self.rot + relative_angle)
+        right_angle = math.radians(self.rot - relative_angle)
+
+        x_displace = 20  # TODO make param
+        y_displace = 40  # TODO make param
+        y_displace = (math.sin(rotation) * y_displace, math.cos(rotation) * y_displace)
+
+        lerp = 5  # TODO make param
+        lerp_tolerance = lerp  # TODO make param
+
+        # -- Calculate foot target if not moving foot --
+        if not self.lfoot_move:
+            self.lfoot_target = [self.pos[0] + math.sin(left_angle) * x_displace + y_displace[0],
+                                 self.pos[1] + math.cos(left_angle) * x_displace + y_displace[1]]
+        if not self.rfoot_move:
+            self.rfoot_target = [self.pos[0] + math.sin(right_angle) * x_displace + y_displace[0],
+                                 self.pos[1] + math.cos(right_angle) * x_displace + y_displace[1]]
+
+            # -- Move Feet --
+        # TODO change lerp algorithm (slow>fast not fast>slow)
+        if self.leg_distances[0] > self.max_leg_distance or self.lfoot_move:
+            self.leg_distances[0] = 0
+            self.lfoot_move = True
+            self.lfoot[0] += (self.lfoot_target[0] - self.lfoot[0]) // lerp
+            self.lfoot[1] += (self.lfoot_target[1] - self.lfoot[1]) // lerp
+            if abs(self.lfoot_target[0] - self.lfoot[0]) <= lerp_tolerance:
+                self.lfoot_move = False
+
+        if self.leg_distances[1] > self.max_leg_distance or self.rfoot_move:
+            self.leg_distances[1] = 0
+            self.rfoot_move = True
+            self.rfoot[0] += (self.rfoot_target[0] - self.rfoot[0]) // lerp
+            self.rfoot[1] += (self.rfoot_target[1] - self.rfoot[1]) // lerp
+            # stop move if foot is at target (within tollerance range)
+            if abs(self.rfoot_target[0] - self.rfoot[0]) <= lerp_tolerance:
+                self.rfoot_move = False
+
+
+    def draw_legs(self):
+        # TODO name variables better and optimise
+        leg_seg_length = self.max_leg_distance // 2
+        # -- right leg --
+        b = get_distance(self.pos, self.rfoot)
+        law_cosines = (leg_seg_length**2 + b**2 - leg_seg_length**2) / (2 * leg_seg_length * b)
+        if law_cosines > 1:
+            law_cosines = 1
+        elif law_cosines < -1:
+            law_cosines = -1
+        angle = math.acos(law_cosines) + math.radians(get_angle(self.pos, self.rfoot))
+        # find elbow
+        elbow = [self.pos[0] + math.sin(angle) * leg_seg_length, self.pos[1] + math.cos(angle) * leg_seg_length]
+        # render
+        pygame.draw.line(self.surface, 'black', self.pos, elbow, 2)
+        pygame.draw.line(self.surface, 'black', elbow, self.rfoot, 2)
+
+        # -- left leg --
+        b = get_distance(self.pos, self.lfoot)
+        law_cosines = (leg_seg_length ** 2 + b ** 2 - leg_seg_length ** 2) / (2 * leg_seg_length * b)
+        if law_cosines > 1:
+            law_cosines = 1
+        elif law_cosines < -1:
+            law_cosines = -1
+        angle = math.acos(law_cosines) + math.radians(get_angle(self.pos, self.lfoot))
+        # find elbow
+        elbow = [self.pos[0] + math.sin(angle) * leg_seg_length, self.pos[1] - math.cos(angle) * leg_seg_length]
+        # render
+        pygame.draw.line(self.surface, 'black', self.pos, elbow, 2)
+        pygame.draw.line(self.surface, 'black', elbow, self.lfoot, 2)
 
     # --- COLLISIONS ---
 
@@ -529,14 +624,29 @@ class Body_Segment:
         self.pos[0] += self.direction.x
         self.pos[1] += self.direction.y
 
+        distance = math.sqrt(self.direction.x**2 + self.direction.y**2)
+        self.leg_distances[0] += distance
+        self.leg_distances[1] += distance
+
         # TODO try syncing code first before collisions
         self.hitbox.center = self.pos  # sync hitbox after pos moved
         '''self.collision_x(tiles)
         self.collision_y(tiles)'''
 
+        if self.has_legs:
+            self.calculate_legs()
+
     def draw(self):
-        #if not self.head:
-            #pygame.draw.line(self.surface, "black", self.pos, self.parent_seg.get_pos(), 3)
+        # feet
+        if self.has_legs:
+            pygame.draw.circle(self.surface, 'blue', self.lfoot, 4)
+            pygame.draw.circle(self.surface, 'blue', self.rfoot, 4)
+
+            # TODO test
+            pygame.draw.line(self.surface, 'black', self.pos, self.lfoot, 2)
+            pygame.draw.line(self.surface, 'black', self.pos, self.rfoot, 2)
+            #self.draw_legs()
+
         if self.head:
             pygame.draw.circle(self.surface, 'purple', self.pos, 3)
         else:
