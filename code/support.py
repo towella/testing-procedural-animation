@@ -3,7 +3,7 @@ from csv import reader
 from game_data import tile_size
 
 
-# -- import functions --
+# -- IMPORT FUNCTIONS --
 
 # allows paths to be used for both normal running in PyCharm and as an .exe
 def resource_path(relative_path):
@@ -83,7 +83,7 @@ def import_cut_graphics(path, art_tile_size):
     return cut_tiles
 
 
-# -- procedural pixel art --
+# -- PROCEDURAL GRAPHICS --
 
 def swap_colour(img, old_c, new_c):
     img.set_colorkey(old_c)
@@ -125,26 +125,20 @@ def circle_surf(radius, colour):
     return surf
 
 
-# -- physics --
-# TODO optimise raycast algorithm
-def raycast(angle, pos, max_distance, tiles):
-    angle = angle * math.pi / 180  # angle of the raycast in RADIANS
-    x = 0
-    y = 0
-    max_distance = round(max_distance)
-    # stepping by 2 introduces margin of error +-2px but also reduces load on checks
-    for hyp in range(0, max_distance, 2):
-        # we know theta (dir) and we're trying to find the x and y values for the given point on the ray.
-        x = math.cos(angle) * hyp  # cos returns ratio from radians
-        y = -(math.sin(angle) * hyp)  # sin returns ratio from radians. Y must be negative because pygame axis is flipped
-        for tile in tiles:
-            if tile.hitbox.collidepoint((pos[0] + x, pos[1] + y)):
-                return (pos[0] + x, pos[1] + y)  # returns collision point
-
-    return (pos[0] + x, pos[1] + y)  # returns maximum coordinate value for ray
-
-
 # -- UTILITIES --
+
+# uses distance between points to lerp based on time between 0 and 1 (acts as % travelled)
+# returns updated val1 position
+def lerp1D(val1, val2, t):
+    return val1 + (val2 - val1) * t
+
+
+# uses distance between points to lerp based on time between 0 and 1 (acts as % travelled)
+# returns updated point1 position
+def lerp2D(point1, point2, t):
+    return [lerp1D(point1[0], point2[0], t),
+            lerp1D(point1[1], point2[1], t)]
+
 
 def get_rect_corners(rect):
     return [rect.topleft, rect.topright, rect.bottomright, rect.bottomleft]

@@ -1,7 +1,7 @@
 import pygame, math
 from game_data import tile_size, controller_map
 from lighting import Light
-from support import get_angle, get_distance
+from support import get_angle, get_distance, lerp2D
 
 
 # SET UP FOR PLATFORMER SINCE PLATFORMERS ARE HARDER TO CREATE A PLAYER FOR
@@ -16,15 +16,7 @@ class Player(pygame.sprite.Sprite):
         self.seg_spacing = segment_spacing
         self.max_seg_speed = 5
         self.max_flex = 30
-        self.points = []
-        self.points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True))
-        for i in range(segments - 1):
-            segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
-            if segment_spacing < 1:  # TODO TEST REMOVE
-                segment_spacing = 1  # TODO TEST REMOVE
-            self.points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, self.points[i]))
-            self.points[i].set_child(self.points[i + 1])  # max i is length of points - 1 (head is added before loop)
-            # therefore child of last point (i) is i + 1
+        self.points = self.create_body(spawn, segments, segment_spacing)
         self.head = self.points[0]
 
         self.light_distance = 40
@@ -39,6 +31,23 @@ class Player(pygame.sprite.Sprite):
         self.collision_tolerance = tile_size
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
         self.vertical_corner_correction_boost = 4
+
+# -- initialisation --
+
+    # initialises the body
+    def create_body(self, spawn, segments, segment_spacing):
+        body_points = []
+
+        body_points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True))
+        for i in range(segments - 1):
+            segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
+            if segment_spacing < 1:  # TODO TEST REMOVE
+                segment_spacing = 1  # TODO TEST REMOVE
+            body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
+            body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
+            # therefore child of last point (i) is i + 1
+
+        return body_points
 
 # -- checks --
 
@@ -90,15 +99,7 @@ class Player(pygame.sprite.Sprite):
     def player_respawn(self, spawn):
         self.rect.x, self.rect.y = spawn.x, spawn.y  # set position to respawn point
         self.sync_hitbox()
-        if spawn.player_facing == 'right':
-            self.facing_right = 1
-        else:
-            self.facing_right = -1
         self.direction = pygame.math.Vector2(0, 0)  # reset movement
-        self.dashing = False  # end any dashes on respawn
-        self.dash_timer = self.dash_max  # prevent dash immediately on reset
-        self.crouching = False  # end any crouching on respawn
-        self.jumping = False  # end any jumps on respawn
         self.respawn = False
 
 # -- movement methods --
@@ -337,20 +338,8 @@ class Body_Segment:
 
         # legs
         self.has_legs = legs
-        # TODO should these be intialised with a point??
-        self.lfoot = None
-        self.rfoot = None
-        self.lfoot_target = None
-        self.rfoot_target = None
-        self.rfoot_move = False
-        self.lfoot_move = False
-        if self.has_legs:
-            # TODO testing make better later
-            self.lfoot = [self.pos[0], self.pos[1]]
-            self.rfoot = [self.pos[0], self.pos[1]]
-
-        self.max_leg_distance = 60  # maximum amount of frames legs will stay still when moving TODO make input param
-        self.leg_distances = [0, 0]
+        self.legs = [Leg(self.surface, self.pos, 1, True, True),
+                     Leg(self.surface, self.pos, 1, False, False)]
 
         # segment values
         self.seg_spacing = segment_spacing
@@ -413,80 +402,6 @@ class Body_Segment:
         self.direction.x += math.sin(angle) * displacement
         self.direction.y += math.cos(angle) * displacement
 
-    # --- LEGS ---
-
-    # TODO OPTIMISE ESPECIALLY USE OF TRIG
-    def calculate_legs(self):
-        rotation = math.radians(self.rot)
-        relative_angle = 50  # TODO make param
-        left_angle = math.radians(self.rot + relative_angle)
-        right_angle = math.radians(self.rot - relative_angle)
-
-        x_displace = 20  # TODO make param
-        y_displace = 40  # TODO make param
-        y_displace = (math.sin(rotation) * y_displace, math.cos(rotation) * y_displace)
-
-        lerp = 5  # TODO make param
-        lerp_tolerance = lerp  # TODO make param
-
-        # -- Calculate foot target if not moving foot --
-        if not self.lfoot_move:
-            self.lfoot_target = [self.pos[0] + math.sin(left_angle) * x_displace + y_displace[0],
-                                 self.pos[1] + math.cos(left_angle) * x_displace + y_displace[1]]
-        if not self.rfoot_move:
-            self.rfoot_target = [self.pos[0] + math.sin(right_angle) * x_displace + y_displace[0],
-                                 self.pos[1] + math.cos(right_angle) * x_displace + y_displace[1]]
-
-            # -- Move Feet --
-        # TODO change lerp algorithm (slow>fast not fast>slow)
-        if self.leg_distances[0] > self.max_leg_distance or self.lfoot_move:
-            self.leg_distances[0] = 0
-            self.lfoot_move = True
-            self.lfoot[0] += (self.lfoot_target[0] - self.lfoot[0]) // lerp
-            self.lfoot[1] += (self.lfoot_target[1] - self.lfoot[1]) // lerp
-            if abs(self.lfoot_target[0] - self.lfoot[0]) <= lerp_tolerance:
-                self.lfoot_move = False
-
-        if self.leg_distances[1] > self.max_leg_distance or self.rfoot_move:
-            self.leg_distances[1] = 0
-            self.rfoot_move = True
-            self.rfoot[0] += (self.rfoot_target[0] - self.rfoot[0]) // lerp
-            self.rfoot[1] += (self.rfoot_target[1] - self.rfoot[1]) // lerp
-            # stop move if foot is at target (within tollerance range)
-            if abs(self.rfoot_target[0] - self.rfoot[0]) <= lerp_tolerance:
-                self.rfoot_move = False
-
-
-    def draw_legs(self):
-        # TODO name variables better and optimise
-        leg_seg_length = self.max_leg_distance // 2
-        # -- right leg --
-        b = get_distance(self.pos, self.rfoot)
-        law_cosines = (leg_seg_length**2 + b**2 - leg_seg_length**2) / (2 * leg_seg_length * b)
-        if law_cosines > 1:
-            law_cosines = 1
-        elif law_cosines < -1:
-            law_cosines = -1
-        angle = math.acos(law_cosines) + math.radians(get_angle(self.pos, self.rfoot))
-        # find elbow
-        elbow = [self.pos[0] + math.sin(angle) * leg_seg_length, self.pos[1] + math.cos(angle) * leg_seg_length]
-        # render
-        pygame.draw.line(self.surface, 'black', self.pos, elbow, 2)
-        pygame.draw.line(self.surface, 'black', elbow, self.rfoot, 2)
-
-        # -- left leg --
-        b = get_distance(self.pos, self.lfoot)
-        law_cosines = (leg_seg_length ** 2 + b ** 2 - leg_seg_length ** 2) / (2 * leg_seg_length * b)
-        if law_cosines > 1:
-            law_cosines = 1
-        elif law_cosines < -1:
-            law_cosines = -1
-        angle = math.acos(law_cosines) + math.radians(get_angle(self.pos, self.lfoot))
-        # find elbow
-        elbow = [self.pos[0] + math.sin(angle) * leg_seg_length, self.pos[1] - math.cos(angle) * leg_seg_length]
-        # render
-        pygame.draw.line(self.surface, 'black', self.pos, elbow, 2)
-        pygame.draw.line(self.surface, 'black', elbow, self.lfoot, 2)
 
     # --- COLLISIONS ---
 
@@ -624,38 +539,154 @@ class Body_Segment:
         self.pos[0] += self.direction.x
         self.pos[1] += self.direction.y
 
-        distance = math.sqrt(self.direction.x**2 + self.direction.y**2)
-        self.leg_distances[0] += distance
-        self.leg_distances[1] += distance
-
         # TODO try syncing code first before collisions
         self.hitbox.center = self.pos  # sync hitbox after pos moved
-        '''self.collision_x(tiles)
-        self.collision_y(tiles)'''
+        #self.collision_x(tiles)
+        #self.collision_y(tiles)
 
+        # -- update legs --
+        distance = math.sqrt(self.direction.x ** 2 + self.direction.y ** 2)
         if self.has_legs:
-            self.calculate_legs()
+            for leg in self.legs:
+                leg.update(self.pos, self.rot, distance)
 
     def draw(self):
-        # feet
+        # -- feet --
         if self.has_legs:
-            pygame.draw.circle(self.surface, 'blue', self.lfoot, 4)
-            pygame.draw.circle(self.surface, 'blue', self.rfoot, 4)
+            for leg in self.legs:
+                leg.draw()
 
-            # TODO test
-            pygame.draw.line(self.surface, 'black', self.pos, self.lfoot, 2)
-            pygame.draw.line(self.surface, 'black', self.pos, self.rfoot, 2)
-            #self.draw_legs()
-
+        # -- body --
         if self.head:
             pygame.draw.circle(self.surface, 'purple', self.pos, 3)
         else:
             pygame.draw.circle(self.surface, 'green', self.pos, 1)
         pygame.draw.circle(self.surface, 'orange', self.pos, self.radius, 1)
-        pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)
-        # TODO debug self.rot
+
+        pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
+
+        # TODO TESTING self.rot
         x = math.sin(math.radians(self.rot)) * 12
         y = math.cos(math.radians(self.rot)) * 12
         epos = (self.pos[0] + x, self.pos[1] + y)
         pygame.draw.line(self.surface, 'red', self.pos, epos, 1)
+
+
+class Leg:
+    def __init__(self, surface, anchor, num_elbows, right_foot, up_elbow=True):
+        # general
+        self.surface = surface
+        self.anchor = anchor  # where the leg is joined to the parent object
+        self.rot = 0  # keeps track of leg rotation
+
+        # foot
+        self.right_foot = right_foot
+        self.foot = anchor  # the leg's foot point
+        self.foot_target = None  # target the foot moves to
+        self.foot_move = False
+
+        # elbows
+        self.num_elbows = num_elbows  # number of leg segments (elbows to be found)
+        self.up_elbow = up_elbow  # whether the elbows face up or down using inverse kinematics
+
+        # leg
+        self.max_leg_distance = 60  # maximum amount of frames legs will stay still when moving TODO make input param
+        self.leg_distance = 0
+
+        # lerp
+        self.lerp_increment = 0.05  # value added to lerp per frame when required
+        self.lerp = 0
+
+    # TODO optimise use of trig
+    def update(self, pos, rot, distance):
+        self.anchor = pos
+        self.rot = rot
+        self.leg_distance += distance
+
+        rotation = math.radians(self.rot)
+        relative_angle = 50  # TODO make param
+        left_angle = math.radians(self.rot + relative_angle)
+        right_angle = math.radians(self.rot - relative_angle)
+
+        x_displace = 20  # TODO make param
+        y_displace = 40  # TODO make param
+        y_displace = (math.sin(rotation) * y_displace, math.cos(rotation) * y_displace)
+
+        # -- Calculate foot target if not moving foot --
+        # left foot
+        if not self.foot_move and not self.right_foot:
+            self.foot_target = [self.anchor[0] + math.sin(left_angle) * x_displace + y_displace[0],
+                                self.anchor[1] + math.cos(left_angle) * x_displace + y_displace[1]]
+        # right foot
+        if not self.foot_move and self.right_foot:
+            self.foot_target = [self.anchor[0] + math.sin(right_angle) * x_displace + y_displace[0],
+                                self.anchor[1] + math.cos(right_angle) * x_displace + y_displace[1]]
+
+        # -- Move Feet --
+        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used)
+        if self.leg_distance > self.max_leg_distance:
+            self.leg_distance = 0
+            self.foot_move = True
+        # lerp (end lerp if at 100%)
+        if self.foot_move:
+            self.foot = lerp2D(self.foot, self.foot_target, self.lerp)
+            self.lerp += self.lerp_increment
+            # stop and reset lerp if at 100% (foot at target)
+            if self.lerp >= 1:
+                self.foot_move = False
+                self.lerp = 0
+
+        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used)
+        # activate lerp
+        if self.leg_distance > self.max_leg_distance:
+            self.leg_distance = 0
+            self.foot_move = True
+        # lerp (end lerp if at 100%)
+        if self.foot_move:
+            self.foot = lerp2D(self.foot, self.foot_target, self.lerp)
+            self.lerp += self.lerp_increment
+            # stop and reset lerp if at 100% (foot at target)
+            if self.lerp >= 1:
+                self.foot_move = False
+                self.lerp = 0
+
+    # TODO optimise use of trig
+    def draw(self):
+        # ------------ FOOT BALLS ---------------
+        pygame.draw.circle(self.surface, 'blue', self.foot, 4)
+
+        #------------- LEG LINES ----------------
+        # TODO name variables better and optimise
+        leg_seg_length = self.max_leg_distance // 2
+
+        b = get_distance(self.anchor, self.foot)
+        # b can not be 0 (division by 0 error) May start as zero when anchor == foot meaning leg distance = 0
+        if b == 0:
+            b = 1
+
+        law_cosines = (leg_seg_length ** 2 + b ** 2 - leg_seg_length ** 2) / (2 * leg_seg_length * b)
+        # prevent law_cosines from causing error when being passed into cos: [-1, 1]
+        if law_cosines > 1:
+            law_cosines = 1
+        elif law_cosines < -1:
+            law_cosines = -1
+
+        # TODO left leg is the problem
+
+        # Find elbows
+        if self.up_elbow:
+            # --- Up Elbow ---  (right)
+            angle = math.acos(law_cosines) + math.radians(get_angle(self.anchor, self.foot))
+            # find elbow
+            elbow = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
+
+        else:
+            # --- Down Elbow ---  (left)
+            angle = math.radians(get_angle(self.anchor, self.foot)) - math.acos(law_cosines)
+            # find elbow
+            elbow = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
+
+        # Render
+        pygame.draw.line(self.surface, 'black', self.anchor, elbow, 2)
+        pygame.draw.line(self.surface, 'black', elbow, self.foot, 2)
 

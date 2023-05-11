@@ -41,7 +41,7 @@ class Level:
         self.tile = pygame.sprite.Group()
         image = pygame.Surface((tile_size, tile_size))
         image.fill("red")
-        self.tile.add(CollideableTile((40, 40), (tile_size, tile_size), 0, image))
+        self.tile.add(CollideableTile((100, 100), (tile_size, tile_size), 0, image))
 
         # - get level data -
         '''tmx_data = load_pygame(resource_path(level_data))  # tile map file
