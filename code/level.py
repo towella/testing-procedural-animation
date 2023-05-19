@@ -180,6 +180,10 @@ class Level:
         width = self.large_font.width('PAUSED')
         self.large_font.render('PAUSED', self.screen_surface, (center_object_x(width, self.screen_surface), 20))
 
+# -- getters and setters --
+    def set_pause(self, bool=True):
+        self.pause = bool
+
 # -------------------------------------------------------------------------------- #
 
     # updates the level allowing tile scroll and displaying tiles to screen

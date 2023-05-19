@@ -1,7 +1,8 @@
 tile_size = 16  # keep to prevent errors, even if game doesn't need tiles
 screen_width = 30 * tile_size  # arbitrary
-screen_height = 20 * tile_size  # arbitrary
-scaling_factor = 2.4  # how much the screen is scaled up before blitting on display
+screen_height = 19 * tile_size  # arbitrary
+# -------- !!!SCALING FACTOR SHOULD BE A WHOLE NUMBER!!! --------
+scaling_factor = 3  # how much the screen is scaled up before blitting on display.
 
 game_speed = 60  # fps
 

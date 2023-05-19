@@ -1,6 +1,12 @@
 o Restrict joint rotation
-o fix elbow directions
-o Add support for varying amounts of legs
-o Add support for varying elbow segments per leg
+
+o fix the staggering of the legs
+o fix the move_time_offset of the legs
+o fix the stretching of the legs when moving backwards
+
+o Add support for inverted insect esque legs
+o Add support for varying elbow segments per leg (including 0 elbows)
+
 o Add collisions
+
 o Add pathfinding AI

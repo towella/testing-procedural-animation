@@ -32,7 +32,7 @@ screen = pygame.Surface((screen_width, screen_height))  # the display surface, r
 screen_rect = screen.get_rect()  # used for camera scroll boundaries
 
 # caption and icon
-pygame.display.set_caption('Sample')
+pygame.display.set_caption('Larry the Cosmic Horror')
 pygame.display.set_icon(pygame.image.load(resource_path('../assets/icon/app_icon.png')))
 
 # get controller joysticks
@@ -95,6 +95,9 @@ def game():
                         game_speed = 20
                     else:
                         game_speed = 60
+                elif event.key == pygame.K_f:
+                    pygame.display.toggle_fullscreen()
+                    level.set_pause()
 
             # Mouse events
             elif event.type == pygame.MOUSEBUTTONDOWN:

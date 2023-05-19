@@ -36,14 +36,16 @@ class Player(pygame.sprite.Sprite):
 
     # initialises the body
     def create_body(self, spawn, segments, segment_spacing):
-        body_points = []
+        body_points = [Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, False)]
 
-        body_points.append(Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True))
         for i in range(segments - 1):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
-            body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
+            if i == 5 or i == 0:
+                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
+            else:
+                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
             body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
             # therefore child of last point (i) is i + 1
 
@@ -338,8 +340,15 @@ class Body_Segment:
 
         # legs
         self.has_legs = legs
-        self.legs = [Leg(self.surface, self.pos, 1, True, True),
-                     Leg(self.surface, self.pos, 1, False, False)]
+        # TODO define these parameters better (mainly for testing)
+        leg_thickness = 3
+        max_leg_length = 60
+        number_elbows = 1
+        target_angle = 40
+        target_displacement = 35
+        time_offset = 0
+        self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, target_displacement,
+                             time_offset, leg_thickness)]
 
         # segment values
         self.seg_spacing = segment_spacing
@@ -528,7 +537,7 @@ class Body_Segment:
         self.direction.y = 0
 
         if not self.head:
-            point = self.parent_seg.get_pos()  # norm pos is required for limiting joint angle
+            point = self.parent_seg.get_prev_pos()
         self.prev_pos = self.pos
 
         # moves towards point based on spacing
@@ -572,94 +581,102 @@ class Body_Segment:
         pygame.draw.line(self.surface, 'red', self.pos, epos, 1)
 
 
-class Leg:
-    def __init__(self, surface, anchor, num_elbows, right_foot, up_elbow=True):
+class LegPair:
+    def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle=50, target_displacement=50, move_time_offset=0, leg_thickness=2):
         # general
         self.surface = surface
         self.anchor = anchor  # where the leg is joined to the parent object
         self.rot = 0  # keeps track of leg rotation
 
-        # foot
-        self.right_foot = right_foot
-        self.foot = anchor  # the leg's foot point
-        self.foot_target = None  # target the foot moves to
-        self.foot_move = False
-
         # elbows
         self.num_elbows = num_elbows  # number of leg segments (elbows to be found)
-        self.up_elbow = up_elbow  # whether the elbows face up or down using inverse kinematics
 
         # leg
-        self.max_leg_distance = 60  # maximum amount of frames legs will stay still when moving TODO make input param
-        self.leg_distance = 0
+        self.max_leg_length = max_leg_length  # informs length of leg segments
+        # tracks distance of body to feet to determine when to move feet [left, right]
+        # max_leg_distance // 2 creates offset between the legs
+        self.leg_distance = [self.max_leg_length // 2 + move_time_offset, 0 + move_time_offset]  # TODO verify move_time_offset is functional
+        self.leg_thickness = leg_thickness
+
+        # foot target
+        self.target_angle = target_angle
+        self.target_disp = target_displacement  # (x, y), displacement of foot targets for x and y relative to seg rot
+        if self.target_disp > self.max_leg_length:
+            self.target_disp = self.max_leg_length
+
+        self.foot_targets = [(0, 0), (0, 0)]  # target the foot moves to [left, right]
+        self.find_targets()
+
+        # foot
+        self.feet = [self.foot_targets[0], self.foot_targets[1]]  # the leg's foot points [left, right]
+        self.foot_move = [False, False]  # whether a foot should move or not [left, right]
 
         # lerp
         self.lerp_increment = 0.05  # value added to lerp per frame when required
-        self.lerp = 0
+        self.lerp = [0, 0]  # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) []left, right]
+
+    def find_targets(self):
+        left_angle = math.radians(self.rot + self.target_angle)
+        right_angle = math.radians(self.rot - self.target_angle)
+
+        # left foot
+        self.foot_targets[0] = (self.anchor[0] + math.sin(left_angle) * self.target_disp,
+                                self.anchor[1] + math.cos(left_angle) * self.target_disp)
+        # right foot
+        self.foot_targets[1] = (self.anchor[0] + math.sin(right_angle) * self.target_disp,
+                                self.anchor[1] + math.cos(right_angle) * self.target_disp)
 
     # TODO optimise use of trig
     def update(self, pos, rot, distance):
         self.anchor = pos
         self.rot = rot
-        self.leg_distance += distance
-
-        rotation = math.radians(self.rot)
-        relative_angle = 50  # TODO make param
-        left_angle = math.radians(self.rot + relative_angle)
-        right_angle = math.radians(self.rot - relative_angle)
-
-        x_displace = 20  # TODO make param
-        y_displace = 40  # TODO make param
-        y_displace = (math.sin(rotation) * y_displace, math.cos(rotation) * y_displace)
+        self.leg_distance[0] += distance
+        self.leg_distance[1] += distance
 
         # -- Calculate foot target if not moving foot --
-        # left foot
-        if not self.foot_move and not self.right_foot:
-            self.foot_target = [self.anchor[0] + math.sin(left_angle) * x_displace + y_displace[0],
-                                self.anchor[1] + math.cos(left_angle) * x_displace + y_displace[1]]
-        # right foot
-        if not self.foot_move and self.right_foot:
-            self.foot_target = [self.anchor[0] + math.sin(right_angle) * x_displace + y_displace[0],
-                                self.anchor[1] + math.cos(right_angle) * x_displace + y_displace[1]]
+        self.find_targets()
+
+        # TODO test render
+        pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
+        pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
 
         # -- Move Feet --
-        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used)
-        if self.leg_distance > self.max_leg_distance:
-            self.leg_distance = 0
-            self.foot_move = True
-        # lerp (end lerp if at 100%)
-        if self.foot_move:
-            self.foot = lerp2D(self.foot, self.foot_target, self.lerp)
-            self.lerp += self.lerp_increment
-            # stop and reset lerp if at 100% (foot at target)
-            if self.lerp >= 1:
-                self.foot_move = False
-                self.lerp = 0
+        # Check if foot needs to move. If it does, zero distance for next move and set bool
+        if self.leg_distance[0] > self.max_leg_length:
+            # TODO if get_distance(self.anchor, self.feet[0]) > self.max_leg_length:
+            self.leg_distance[0] = 0
+            self.foot_move[0] = True
+        if self.leg_distance[1] > self.max_leg_length:
+            # TODO if get_distance(self.anchor, self.feet[1]) > self.max_leg_length:
+            self.leg_distance[1] = 0
+            self.foot_move[1] = True
 
-        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used)
-        # activate lerp
-        if self.leg_distance > self.max_leg_distance:
-            self.leg_distance = 0
-            self.foot_move = True
-        # lerp (end lerp if at 100%)
-        if self.foot_move:
-            self.foot = lerp2D(self.foot, self.foot_target, self.lerp)
-            self.lerp += self.lerp_increment
+        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used) (end lerp if at 100%)
+        if self.foot_move[0]:
+            self.feet[0] = lerp2D(self.feet[0], self.foot_targets[0], self.lerp[0])
+            self.lerp[0] += self.lerp_increment
             # stop and reset lerp if at 100% (foot at target)
-            if self.lerp >= 1:
-                self.foot_move = False
-                self.lerp = 0
+            if self.lerp[0] >= 1:
+                self.foot_move[0] = False
+                self.lerp[0] = 0
+        if self.foot_move[1]:
+            self.feet[1] = lerp2D(self.feet[1], self.foot_targets[1], self.lerp[1])
+            self.lerp[1] += self.lerp_increment
+            if self.lerp[1] >= 1:
+                self.foot_move[1] = False
+                self.lerp[1] = 0
 
     # TODO optimise use of trig
     def draw(self):
-        # ------------ FOOT BALLS ---------------
-        pygame.draw.circle(self.surface, 'blue', self.foot, 4)
+        # ------------ FEET BALLS ---------------
+        pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
+        pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
 
         #------------- LEG LINES ----------------
         # TODO name variables better and optimise
-        leg_seg_length = self.max_leg_distance // 2
+        leg_seg_length = self.max_leg_length // (self.num_elbows + 1)
 
-        b = get_distance(self.anchor, self.foot)
+        b = get_distance(self.anchor, self.feet[0])
         # b can not be 0 (division by 0 error) May start as zero when anchor == foot meaning leg distance = 0
         if b == 0:
             b = 1
@@ -671,22 +688,25 @@ class Leg:
         elif law_cosines < -1:
             law_cosines = -1
 
-        # TODO left leg is the problem
-
         # Find elbows
-        if self.up_elbow:
-            # --- Up Elbow ---  (right)
-            angle = math.acos(law_cosines) + math.radians(get_angle(self.anchor, self.foot))
-            # find elbow
-            elbow = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
-
-        else:
-            # --- Down Elbow ---  (left)
-            angle = math.radians(get_angle(self.anchor, self.foot)) - math.acos(law_cosines)
-            # find elbow
-            elbow = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
-
+        # --- Down Elbow ---  (left)
+        angle_to_foot = math.radians(get_angle(self.anchor, self.feet[0]))
+        angle = angle_to_foot - math.acos(law_cosines)
+        # find elbow
+        elbow = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
         # Render
-        pygame.draw.line(self.surface, 'black', self.anchor, elbow, 2)
-        pygame.draw.line(self.surface, 'black', elbow, self.foot, 2)
+        pygame.draw.line(self.surface, 'black', self.anchor, elbow, self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', elbow, self.feet[0], self.leg_thickness)
 
+        # --- Up Elbow ---  (right)
+        angle_to_foot = math.radians(get_angle(self.anchor, self.feet[1]))
+        angle = math.acos(law_cosines) + angle_to_foot
+        # find elbow
+        elbow = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
+        # Render
+        pygame.draw.line(self.surface, 'black', self.anchor, elbow, self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', elbow, self.feet[1], self.leg_thickness)
+
+        # TODO testing 0 elbow
+        #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
+        #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[1], self.leg_thickness)
