@@ -1,0 +1,107 @@
+{
+    "Map/SizeTest": {
+        "height": 4300,
+        "width": 2
+    },
+    "activeFile": "tiled_rooms/room_0.tmx",
+    "expandedProjectPaths": [
+        ".",
+        "tiled_rooms",
+        "tiled_templates"
+    ],
+    "file.lastUsedOpenFilter": "All Files (*)",
+    "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/platformer_test/assets/level_assets/decoration objects/object_set_template/object_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/platformer_test/assets/level_assets/tiles/tile_set_template/tile_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/platformer_test/rooms/room_0.tmx": {
+            "expandedGroupLayers": [
+                17
+            ],
+            "scale": 1,
+            "selectedLayer": 10,
+            "viewCenter": {
+                "x": 266,
+                "y": 327
+            }
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/assets/level_assets/decoration objects/object_set_template/object_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/assets/level_assets/tiles/tile_set_template/tile_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/assets/level_assets/decoration objects/object_set_template/object_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/assets/level_assets/tiles/tile_set_template/tile_set_template.tsx": {
+            "scaleInDock": 1
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_0.tmx": {
+            "scale": 0.565,
+            "selectedLayer": 8,
+            "viewCenter": {
+                "x": 530.9734513274337,
+                "y": 663.7168141592921
+            }
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_1.tmx": {
+            "scale": 0.8933238636363635,
+            "selectedLayer": 6,
+            "viewCenter": {
+                "x": 256.3460009540467,
+                "y": 347.0186039115917
+            }
+        },
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_2.tmx": {
+            "scale": 0.7278935185185185,
+            "selectedLayer": 5,
+            "viewCenter": {
+                "x": 361.31658451264116,
+                "y": 425.88646843695346
+            }
+        },
+        "/Users/towella/Documents/programming/GitHub/snek-procedural-animation/assets/level_assets/tiles/tile_set_template/tile_set_template.tsx": {
+            "scaleInDock": 2.42
+        },
+        "tiled_rooms/room_0.tmx": {
+            "expandedGroupLayers": [
+                4,
+                3
+            ],
+            "scale": 1.3958,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 162.63074939103024,
+                "y": 108.1816879209056
+            }
+        }
+    },
+    "last.externalTilesetPath": "/Users/towella/Documents/programming/GitHub/pygame-library/assets/level_assets/tiles/tile_set_template",
+    "last.objectTemplatePath": "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_templates",
+    "last.worldFilePath": "/Users/towella/Documents/programming/GitHub/snek-procedural-animation/rooms/tiled_worlds",
+    "loadedWorlds": [
+        "/Users/towella/Documents/programming/GitHub/snek-procedural-animation/rooms/tiled_worlds/habitat.world"
+    ],
+    "map.height": 19,
+    "map.lastUsedFormat": "tmx",
+    "map.tileHeight": 16,
+    "map.tileWidth": 16,
+    "openFiles": [
+        "tiled_rooms/room_0.tmx"
+    ],
+    "project": "snek-procedural-animation.tiled-project",
+    "recentFiles": [
+        "tiled_rooms/room_0.tmx",
+        "/Users/towella/Documents/programming/GitHub/platformer_test/rooms/room_0.tmx",
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_0.tmx",
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_2.tmx",
+        "/Users/towella/Documents/programming/GitHub/pygame-library/rooms/tiled_rooms/room_1.tmx"
+    ]
+}

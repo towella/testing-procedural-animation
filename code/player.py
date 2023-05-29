@@ -6,18 +6,19 @@ from support import get_angle, get_distance, lerp2D
 
 # SET UP FOR PLATFORMER SINCE PLATFORMERS ARE HARDER TO CREATE A PLAYER FOR
 class Player(pygame.sprite.Sprite):
-    def __init__(self, spawn, surface, segments, segment_spacing, controllers):
+    def __init__(self, level, spawn, segments, segment_spacing):
         super().__init__()
-        self.surface = surface
-        self.controllers = controllers
+        self.level = level
+        self.surface = self.level.screen_surface
+        self.controllers = self.level.controllers
 
         # -- player setup --
         self.speed = 3
         self.seg_spacing = segment_spacing
         self.max_seg_speed = 5
         self.max_flex = 30
-        self.points = self.create_body(spawn, segments, segment_spacing)
-        self.head = self.points[0]
+        self.segments = self.create_body(spawn, segments, segment_spacing)
+        self.head = self.segments[0]
 
         self.light_distance = 40
         self.lights = [Light(self.surface, self.head.pos, (10, 10, 10), False, 40, 30, 0.02),
@@ -36,7 +37,7 @@ class Player(pygame.sprite.Sprite):
 
     # initialises the body
     def create_body(self, spawn, segments, segment_spacing):
-        body_points = [Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, False)]
+        body_points = [Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True)]
 
         for i in range(segments - 1):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
@@ -45,7 +46,7 @@ class Player(pygame.sprite.Sprite):
             if i == 5 or i == 0:
                 body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
             else:
-                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
+                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
             body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
             # therefore child of last point (i) is i + 1
 
@@ -225,34 +226,6 @@ class Player(pygame.sprite.Sprite):
     # contains gravity + it's exceptions(gravity code from clearcode platformer tut), terminal velocity, fall timer
     # and application of y direction
     def apply_y_direction(self, dt):
-        # -- gravity --
-        # if dashing, set direction.y to 0 to allow float
-        if self.dashing:
-            self.direction.y = 0
-        # when on the ground set direction.y to 1. Prevents gravity accumulation. Allows accurate on_ground detection
-        # must be greater than 1 so player falls into below tile's hitbox every frame and is brought back up
-        elif self.on_ground:
-            self.direction.y = 1
-        # if not dashing or on the ground apply gravity normally
-        else:
-            # if falling, apply more gravity than if moving up
-            if self.direction.y > 0:
-                self.direction.y += self.fall_gravity
-            else:
-                self.direction.y += self.gravity
-
-        # -- terminal velocity --
-        # TODO needs dt??
-        if self.direction.y > self.terminal_vel:
-            self.direction.y = self.terminal_vel
-
-        # -- fall timer --
-        # if falling in the air, increment timer else its 0
-        if self.direction.y > 0 and not self.on_ground:
-            self.fall_timer += round(1 * dt)
-        else:
-            self.fall_timer = 0
-
         # -- apply y direction and sync --
         self.rect.y += round(self.direction.y * dt)
         self.sync_hitbox()
@@ -288,13 +261,13 @@ class Player(pygame.sprite.Sprite):
 
         # - collision and movement -
         # MOVEMENT
-        for i in range(len(self.points)):
+        for i in range(len(self.segments)):
             # if not a head don't pass mouse cursor (point is based on parent seg)
             if i > 0:
-                self.points[i].update(tiles)
+                self.segments[i].update(tiles)
             # if head pass mouse cursor as point to follow
             else:
-                self.points[i].update(tiles, mouse_pos)
+                self.segments[i].update(tiles, mouse_pos)
 
         # COLLISIONS
         # applies direction to player then resyncs hitbox (included in most movement/collision functions)
@@ -319,16 +292,16 @@ class Player(pygame.sprite.Sprite):
 # -- visual methods --
 
     def draw(self):
-        for point in self.points:
-            point.draw()
+        for segment in self.segments:
+            segment.draw()
         for light in self.lights:
             light.draw()
 
 
 class Body_Segment:
-    def __init__(self, surface, pos, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
+    def __init__(self, surface, spawn, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
         self.surface = surface  # segment render surface
-        self.pos = [pos[0], pos[1]]  # segment position
+        self.pos = [spawn.x, spawn.y]  # segment position
         self.prev_pos = self.pos
         self.move_speed = max_move_speed  # for head only
         self.direction = pygame.Vector2(0, 0)  # tracks segment movement
@@ -360,9 +333,8 @@ class Body_Segment:
             self.head = False
 
         # collision
-        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius*2, self.radius*2)
         self.collision_tolerance = tile_size
-        self.corner_correction = 3
 
     # --- MOVEMENT ---
 
@@ -411,106 +383,42 @@ class Body_Segment:
         self.direction.x += math.sin(angle) * displacement
         self.direction.y += math.cos(angle) * displacement
 
-
     # --- COLLISIONS ---
 
     # checks collision for a given hitbox against given tiles on the x
-    def collision_x(self, tiles):
-        collision_offset = [0, 0]  # position hitbox is to be corrected to after checks
-
-        top = False
-        top_margin = False
-        bottom = False
-        bottom_margin = False
-
+    def collisions(self, tiles):
+        # -- X Collisions --
+        collision_offset = 0  # position pos (and therefore hitbox) is to be corrected to after checks
         for tile in tiles:
             if tile.hitbox.colliderect(self.hitbox):
                 # - normal collision checks -
                 # abs ensures only the desired side registers collision
-                # not having collisions dependant on status allows hitboxes to change size
                 if abs(tile.hitbox.right - self.hitbox.left) < self.collision_tolerance:
-                    collision_offset[0] = tile.hitbox.right - self.hitbox.left
+                    collision_offset = tile.hitbox.right - self.hitbox.left
                 elif abs(tile.hitbox.left - self.hitbox.right) < self.collision_tolerance:
-                    collision_offset[0] = tile.hitbox.left - self.hitbox.right
-
-                # - horizontal corner correction - (for both side collisions)
-
-                # checking allowed to corner correct
-                # Use a diagram. Please
-                # checks if the relevant horizontal raycasts on the player hitbox are within a tile or not
-                # this allows determination as to whether on the end of a column of tiles or not
-
-                # top
-                if tile.hitbox.top <= self.hitbox.top <= tile.hitbox.bottom:
-                    top = True
-                if tile.hitbox.top <= self.hitbox.top + self.corner_correction <= tile.hitbox.bottom:
-                    top_margin = True
-                # stores tile for later potential corner correction
-                if self.hitbox.top < tile.hitbox.bottom < self.hitbox.top + self.corner_correction:
-                    collision_offset[1] = tile.hitbox.bottom - self.hitbox.top
-
-                # bottom
-                if tile.hitbox.top <= self.hitbox.bottom <= tile.hitbox.bottom:
-                    bottom = True
-                if tile.hitbox.top <= self.hitbox.bottom - self.corner_correction <= tile.hitbox.bottom:
-                    bottom_margin = True
-                if self.hitbox.bottom > tile.hitbox.top > self.hitbox.bottom - self.corner_correction:
-                    collision_offset[1] = -(self.hitbox.bottom - tile.hitbox.top)
+                    collision_offset = tile.hitbox.left - self.hitbox.right
 
         # -- application of offsets --
         # must occur after checks so that corner correction can check every contacted tile
         # without movement of hitbox half way through checks
-
         # - collision correction -
-        self.hitbox.x += collision_offset[0]
+        self.pos[0] += collision_offset
+        self.hitbox.center = self.pos  # sync hitbox after pos moved in collisions
 
-        # - corner correction -
-        # adding velocity requirement prevents correction when just walking towards a wall. Only works at a higher
-        # velocity like during a dash or if the player is boosted.
-        if (top and not top_margin) or (bottom and not bottom_margin):
-            self.hitbox.y += collision_offset[1]
-
-    # checks collision for a given hitbox against given tiles on the y
-    def collision_y(self, tiles):
-        collision_offset = [0, 0]
-
-        left = False
-        left_margin = False
-        right = False
-        right_margin = False
-
+        # -- Y Collisions --
+        collision_offset = 0
         for tile in tiles:
             if tile.hitbox.colliderect(self.hitbox):
                 # abs ensures only the desired side registers collision
                 if abs(tile.hitbox.top - self.hitbox.bottom) < self.collision_tolerance:
-                    collision_offset[1] = tile.hitbox.top - self.hitbox.bottom
-                # collision with bottom of tile
+                    collision_offset = tile.hitbox.top - self.hitbox.bottom
                 elif abs(tile.hitbox.bottom - self.hitbox.top) < self.collision_tolerance:
-                    collision_offset[1] = tile.hitbox.bottom - self.hitbox.top
-
-                # - vertical corner correction - (only for top, not bottom collision)
-                # left
-                if tile.hitbox.left <= self.hitbox.left <= tile.hitbox.right:
-                    left = True
-                if tile.hitbox.left <= self.hitbox.left + self.corner_correction <= tile.hitbox.right:
-                    left_margin = True
-                if self.hitbox.left < tile.hitbox.right < self.hitbox.left + self.corner_correction:
-                    collision_offset[0] = tile.hitbox.right - self.hitbox.left
-
-                # right
-                if tile.hitbox.left <= self.hitbox.right <= tile.hitbox.right:
-                    right = True
-                if tile.hitbox.left <= self.hitbox.right - self.corner_correction <= tile.hitbox.right:
-                    right_margin = True
-                if self.hitbox.right > tile.hitbox.left > self.hitbox.right - self.corner_correction:
-                    collision_offset[0] = -(self.hitbox.right - tile.hitbox.left)
+                    collision_offset = tile.hitbox.bottom - self.hitbox.top
 
         # -- application of offsets --
         # - normal collisions -
-        self.hitbox.y += collision_offset[1]
-        # - corner correction -
-        if (left and not left_margin) or (right and not right_margin):
-            self.hitbox.x += collision_offset[0]
+        self.pos[1] += collision_offset
+        self.hitbox.center = self.pos  # sync hitbox after pos moved in collisions
 
     # --- GETTERS AND SETTERS ---
 
@@ -547,11 +455,10 @@ class Body_Segment:
         # update position
         self.pos[0] += self.direction.x
         self.pos[1] += self.direction.y
+        self.hitbox.center = self.pos  # sync hitbox after pos has been moved
 
-        # TODO try syncing code first before collisions
-        self.hitbox.center = self.pos  # sync hitbox after pos moved
-        #self.collision_x(tiles)
-        #self.collision_y(tiles)
+        # collision detection
+        self.collisions(tiles)
 
         # -- update legs --
         distance = math.sqrt(self.direction.x ** 2 + self.direction.y ** 2)
@@ -636,9 +543,9 @@ class LegPair:
         # -- Calculate foot target if not moving foot --
         self.find_targets()
 
-        # TODO test render
-        pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
-        pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
+        # TODO test render for targets
+        #pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
+        #pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
 
         # -- Move Feet --
         # Check if foot needs to move. If it does, zero distance for next move and set bool

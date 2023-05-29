@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+ <object name="spawn_trigger_name" class="SpawnTrigger" width="109.07" height="53.4311">
+  <properties>
+   <property name="trigger_spawn" type="object" value="14"/>
+  </properties>
+ </object>
+</template>

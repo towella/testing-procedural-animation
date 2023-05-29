@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+ <object name="spawn_name" class="Spawn">
+  <properties>
+   <property name="player_facing" value="left_right"/>
+  </properties>
+  <point/>
+ </object>
+</template>

@@ -60,7 +60,8 @@ def game():
     previous_time = time.time()
     fps = clock.get_fps()
 
-    level = Level(fps, 'room', screen, screen_rect, joysticks)
+    starting_spawn = 'initial'
+    level = Level(fps, '../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks, starting_spawn)
 
     run = True
     while run:
