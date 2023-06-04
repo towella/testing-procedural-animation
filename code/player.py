@@ -105,140 +105,7 @@ class Player(pygame.sprite.Sprite):
         self.direction = pygame.math.Vector2(0, 0)  # reset movement
         self.respawn = False
 
-# -- movement methods --
-
 # -- update methods --
-
-    # checks collision for a given hitbox against given tiles on the x
-    def collision_x(self, hitbox, tiles):
-        collision_offset = [0, 0]  # position hitbox is to be corrected to after checks
-        self.on_wall = False
-
-        top = False
-        top_margin = False
-        bottom = False
-        bottom_margin = False
-
-        for tile in tiles:
-            if tile.hitbox.colliderect(hitbox):
-                # - normal collision checks -
-                # abs ensures only the desired side registers collision
-                # not having collisions dependant on status allows hitboxes to change size
-                if abs(tile.hitbox.right - hitbox.left) < self.collision_tolerance:
-                    collision_offset[0] = tile.hitbox.right - hitbox.left
-                    self.on_wall_right = False  # which side is player clinging?
-                elif abs(tile.hitbox.left - hitbox.right) < self.collision_tolerance:
-                    collision_offset[0] = tile.hitbox.left - hitbox.right
-                    self.on_wall_right = True  # which side is player clinging?
-
-                #- horizontal corner correction - (for both side collisions)
-
-                # checking allowed to corner correct
-                # Use a diagram. Please
-                # checks if the relevant horizontal raycasts on the player hitbox are within a tile or not
-                # this allows determination as to whether on the end of a column of tiles or not
-
-                # top
-                if tile.hitbox.top <= hitbox.top <= tile.hitbox.bottom:
-                    top = True
-                if tile.hitbox.top <= hitbox.top + self.corner_correction <= tile.hitbox.bottom:
-                    top_margin = True
-                # stores tile for later potential corner correction
-                if hitbox.top < tile.hitbox.bottom < hitbox.top + self.corner_correction:
-                    collision_offset[1] = tile.hitbox.bottom - hitbox.top
-
-                # bottom
-                if tile.hitbox.top <= hitbox.bottom <= tile.hitbox.bottom:
-                    bottom = True
-                if tile.hitbox.top <= hitbox.bottom - self.corner_correction <= tile.hitbox.bottom:
-                    bottom_margin = True
-                if hitbox.bottom > tile.hitbox.top > hitbox.bottom - self.corner_correction:
-                    collision_offset[1] = -(hitbox.bottom - tile.hitbox.top)
-
-        # -- application of offsets --
-        # must occur after checks so that corner correction can check every contacted tile
-        # without movement of hitbox half way through checks
-        # - collision correction -
-        hitbox.x += collision_offset[0]
-        # - corner correction -
-        # adding velocity requirement prevents correction when just walking towards a wall. Only works at a higher
-        # velocity like during a dash or if the player is boosted.
-        if ((top and not top_margin) or (bottom and not bottom_margin)) and abs(self.direction.x) >= self.dash_speed:
-            hitbox.y += collision_offset[1]
-
-        self.sync_rect()
-
-    # checks collision for a given hitbox against given tiles on the y
-    def collision_y(self, hitbox, tiles):
-        collision_offset = [0, 0]
-        self.on_ground = False
-
-        left = False
-        left_margin = False
-        right = False
-        right_margin = False
-
-        bonk = False
-
-        for tile in tiles:
-            if tile.hitbox.colliderect(hitbox):
-                # abs ensures only the desired side registers collision
-                if abs(tile.hitbox.top - hitbox.bottom) < self.collision_tolerance:
-                    self.on_ground = True
-                    collision_offset[1] = tile.hitbox.top - hitbox.bottom
-                # collision with bottom of tile
-                elif abs(tile.hitbox.bottom - hitbox.top) < self.collision_tolerance:
-                    collision_offset[1] = tile.hitbox.bottom - hitbox.top
-
-                    # - vertical corner correction - (only for top, not bottom collision)
-                    # left
-                    if tile.hitbox.left <= hitbox.left <= tile.hitbox.right:
-                        left = True
-                    if tile.hitbox.left <= hitbox.left + self.corner_correction <= tile.hitbox.right:
-                        left_margin = True
-                    if hitbox.left < tile.hitbox.right < hitbox.left + self.corner_correction:
-                        collision_offset[0] = tile.hitbox.right - hitbox.left
-
-                    # right
-                    if tile.hitbox.left <= hitbox.right <= tile.hitbox.right:
-                        right = True
-                    if tile.hitbox.left <= hitbox.right - self.corner_correction <= tile.hitbox.right:
-                        right_margin = True
-                    if hitbox.right > tile.hitbox.left > hitbox.right - self.corner_correction:
-                        collision_offset[0] = -(hitbox.right - tile.hitbox.left)
-
-                    bonk = True
-
-        # -- application of offsets --
-        # - normal collisions -
-        hitbox.y += collision_offset[1]
-        # - corner correction -
-        if (left and not left_margin) or (right and not right_margin):
-            hitbox.x += collision_offset[0]
-            hitbox.y -= self.vertical_corner_correction_boost
-        # drop by zeroing upwards velocity if corner correction isn't necessary and hit bottom of tile
-        elif bonk:
-            self.direction.y = 0
-
-        # resyncs up rect to the hitbox
-        self.sync_rect()
-
-    # contains gravity + it's exceptions(gravity code from clearcode platformer tut), terminal velocity, fall timer
-    # and application of y direction
-    def apply_y_direction(self, dt):
-        # -- apply y direction and sync --
-        self.rect.y += round(self.direction.y * dt)
-        self.sync_hitbox()
-
-    # syncs the player's current and stored hitboxes with the player rect for proper collisions. For use after movement of player rect.
-    def sync_hitbox(self):
-        self.hitbox.midbottom = self.rect.midbottom
-        self.norm_hitbox.midbottom = self.rect.midbottom
-        self.crouch_hitbox.midbottom = self.rect.midbottom
-
-    # syncs the player's rect with the current hitbox for proper movement. For use after movement of main hitbox
-    def sync_rect(self):
-        self.rect.midbottom = self.hitbox.midbottom
 
     def apply_scroll(self, scroll_value):
         self.rect.x -= int(scroll_value[1])
@@ -333,7 +200,7 @@ class Body_Segment:
             self.head = False
 
         # collision
-        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius*2, self.radius*2)
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
         self.collision_tolerance = tile_size
 
     # --- MOVEMENT ---
@@ -386,39 +253,30 @@ class Body_Segment:
     # --- COLLISIONS ---
 
     # checks collision for a given hitbox against given tiles on the x
-    def collisions(self, tiles):
+    def collision_x(self, tiles):
         # -- X Collisions --
-        collision_offset = 0  # position pos (and therefore hitbox) is to be corrected to after checks
         for tile in tiles:
             if tile.hitbox.colliderect(self.hitbox):
                 # - normal collision checks -
                 # abs ensures only the desired side registers collision
                 if abs(tile.hitbox.right - self.hitbox.left) < self.collision_tolerance:
-                    collision_offset = tile.hitbox.right - self.hitbox.left
+                    self.hitbox.left = tile.hitbox.right
                 elif abs(tile.hitbox.left - self.hitbox.right) < self.collision_tolerance:
-                    collision_offset = tile.hitbox.left - self.hitbox.right
+                    self.hitbox.right = tile.hitbox.left
 
-        # -- application of offsets --
-        # must occur after checks so that corner correction can check every contacted tile
-        # without movement of hitbox half way through checks
-        # - collision correction -
-        self.pos[0] += collision_offset
-        self.hitbox.center = self.pos  # sync hitbox after pos moved in collisions
+                self.pos = [self.hitbox.centerx, self.hitbox.centery]
 
+    def collision_y(self, tiles):
         # -- Y Collisions --
-        collision_offset = 0
         for tile in tiles:
             if tile.hitbox.colliderect(self.hitbox):
                 # abs ensures only the desired side registers collision
                 if abs(tile.hitbox.top - self.hitbox.bottom) < self.collision_tolerance:
-                    collision_offset = tile.hitbox.top - self.hitbox.bottom
+                    self.hitbox.bottom = tile.hitbox.top
                 elif abs(tile.hitbox.bottom - self.hitbox.top) < self.collision_tolerance:
-                    collision_offset = tile.hitbox.bottom - self.hitbox.top
+                    self.hitbox.top = tile.hitbox.bottom
 
-        # -- application of offsets --
-        # - normal collisions -
-        self.pos[1] += collision_offset
-        self.hitbox.center = self.pos  # sync hitbox after pos moved in collisions
+                self.pos = [self.hitbox.centerx, self.hitbox.centery]
 
     # --- GETTERS AND SETTERS ---
 
@@ -439,6 +297,9 @@ class Body_Segment:
 
     # --- UPDATE AND DRAW ---
 
+    def sync_hitbox(self):
+        self.hitbox.center = self.pos
+
     def update(self, tiles, point=(0, 0)):
         # reset direction vector
         self.direction.x = 0
@@ -452,19 +313,21 @@ class Body_Segment:
         hyp = self.adjusted_distance(point)
         self.move(point, hyp)
 
-        # update position
+        # update position and collision detection
+        # X
         self.pos[0] += self.direction.x
+        self.sync_hitbox()  # sync hitbox after pos has been moved ready for collision detection
+        self.collision_x(tiles)  # x collisions after x movement (separate to y movement)
+        # Y
         self.pos[1] += self.direction.y
-        self.hitbox.center = self.pos  # sync hitbox after pos has been moved
-
-        # collision detection
-        self.collisions(tiles)
+        self.sync_hitbox()  # sync hitbox after pos has been moved ready for collision detection
+        self.collision_y(tiles)  # y collisions after y movement (separate to x movement)
 
         # -- update legs --
         distance = math.sqrt(self.direction.x ** 2 + self.direction.y ** 2)
         if self.has_legs:
             for leg in self.legs:
-                leg.update(self.pos, self.rot, distance)
+                leg.update(self.pos, self.rot, distance, tiles)
 
     def draw(self):
         # -- feet --
@@ -490,39 +353,68 @@ class Body_Segment:
 
 class LegPair:
     def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle=50, target_displacement=50, move_time_offset=0, leg_thickness=2):
-        # general
+        # - general -
         self.surface = surface
         self.anchor = anchor  # where the leg is joined to the parent object
         self.rot = 0  # keeps track of leg rotation
+        self.collision_tolerance = tile_size
 
-        # elbows
+        # - elbows -
         self.num_elbows = num_elbows  # number of leg segments (elbows to be found)
 
-        # leg
+        # - leg -
         self.max_leg_length = max_leg_length  # informs length of leg segments
         # tracks distance of body to feet to determine when to move feet [left, right]
         # max_leg_distance // 2 creates offset between the legs
         self.leg_distance = [self.max_leg_length // 2 + move_time_offset, 0 + move_time_offset]  # TODO verify move_time_offset is functional
         self.leg_thickness = leg_thickness
 
-        # foot target
+        # - foot target -
         self.target_angle = target_angle
         self.target_disp = target_displacement  # (x, y), displacement of foot targets for x and y relative to seg rot
         if self.target_disp > self.max_leg_length:
             self.target_disp = self.max_leg_length
 
-        self.foot_targets = [(0, 0), (0, 0)]  # target the foot moves to [left, right]
+        self.foot_targets = [[0, 0], [0, 0]]  # target the foot moves to [left, right]
         self.find_targets()
 
-        # foot
+        target_radius = 8  # MUST BE GREATER THAN 0
+        # keeps track of feet targets for collisions [left, right]
+        self.foot_hitboxes = [pygame.Rect(self.foot_targets[0], (target_radius, target_radius)),
+                              pygame.Rect(self.foot_targets[1], (target_radius, target_radius))]
+
+        # - foot -
         self.feet = [self.foot_targets[0], self.foot_targets[1]]  # the leg's foot points [left, right]
         self.foot_move = [False, False]  # whether a foot should move or not [left, right]
 
-        # lerp
+        # - lerp-
         self.lerp_increment = 0.05  # value added to lerp per frame when required
         self.lerp = [0, 0]  # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) []left, right]
 
-    def find_targets(self):
+    def collision_x(self, target, tiles):
+        # -- X Collisions --
+        for tile in tiles:
+            if tile.hitbox.colliderect(target):
+                # - normal collision checks -
+                # abs ensures only the desired side registers collision
+                if abs(tile.hitbox.right - target.left) < self.collision_tolerance:
+                    target.left = tile.hitbox.right
+                elif abs(tile.hitbox.left - target.right) < self.collision_tolerance:
+                    target.right = tile.hitbox.left
+        return target
+
+    def collision_y(self, target, tiles):
+        # -- Y Collisions --
+        for tile in tiles:
+            if tile.hitbox.colliderect(target):
+                # abs ensures only the desired side registers collision
+                if abs(tile.hitbox.top - target.bottom) < self.collision_tolerance:
+                    target.bottom = tile.hitbox.top
+                elif abs(tile.hitbox.bottom - target.top) < self.collision_tolerance:
+                    target.top = tile.hitbox.bottom
+        return target
+
+    def find_targets(self, tiles=pygame.sprite.Group()):
         left_angle = math.radians(self.rot + self.target_angle)
         right_angle = math.radians(self.rot - self.target_angle)
 
@@ -533,8 +425,20 @@ class LegPair:
         self.foot_targets[1] = (self.anchor[0] + math.sin(right_angle) * self.target_disp,
                                 self.anchor[1] + math.cos(right_angle) * self.target_disp)
 
+        '''print(self.foot_hitboxes[0])
+        self.foot_hitboxes[0].centerx = self.anchor[0] + math.sin(left_angle) * self.target_disp
+        self.foot_hitboxes[1].centerx = self.anchor[0] + math.sin(right_angle) * self.target_disp
+        self.foot_hitboxes[0] = self.collision_x(self.foot_hitboxes[0], tiles)
+        self.foot_hitboxes[1] = self.collision_x(self.foot_hitboxes[1], tiles)
+
+        self.foot_hitboxes[0].centery = self.anchor[1] + math.sin(left_angle) * self.target_disp
+        self.foot_hitboxes[1].centery = self.anchor[1] + math.sin(right_angle) * self.target_disp
+        self.foot_hitboxes[0] = self.collision_y(self.foot_hitboxes[0], tiles)
+        self.foot_hitboxes[1] = self.collision_y(self.foot_hitboxes[1], tiles)'''
+
+
     # TODO optimise use of trig
-    def update(self, pos, rot, distance):
+    def update(self, pos, rot, distance, tiles):
         self.anchor = pos
         self.rot = rot
         self.leg_distance[0] += distance
@@ -544,8 +448,11 @@ class LegPair:
         self.find_targets()
 
         # TODO test render for targets
-        #pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
-        #pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
+        '''pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
+        pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
+        pygame.draw.rect(self.surface, 'yellow', self.foot_hitboxes[0], 1)
+        pygame.draw.rect(self.surface, 'yellow', self.foot_hitboxes[1], 1)'''
+
 
         # -- Move Feet --
         # Check if foot needs to move. If it does, zero distance for next move and set bool

@@ -7,6 +7,6 @@ o fix the stretching of the legs when moving backwards
 o Add support for inverted insect esque legs
 o Add support for varying elbow segments per leg (including 0 elbows)
 
-o Add collisions
+o add leg target collisions
 
 o Add pathfinding
