@@ -99,6 +99,9 @@ def game():
                 elif event.key == pygame.K_f:
                     pygame.display.toggle_fullscreen()
                     level.set_pause()
+                elif event.key == pygame.K_r:
+                    level = Level(fps, '../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks,
+                                  starting_spawn)
 
             # Mouse events
             elif event.type == pygame.MOUSEBUTTONDOWN:

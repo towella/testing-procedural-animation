@@ -1,5 +1,6 @@
 # - libraries -
 import pygame
+from random import randint
 from pytmx.util_pygame import load_pygame  # allows use of tiled tile map files for pygame use
 # - general -
 from game_data import tile_size, controller_map, fonts
@@ -76,6 +77,9 @@ class Level:
         self.player.sprite.apply_scroll(scroll_value)  # applies new scroll to player
         self.all_tile_sprites.update(scroll_value)  # applies new scroll to all tile sprites
         self.all_object_sprites.update(scroll_value)  # applies new scroll to all object sprites'''
+
+        self.player_target = (0, 0)  # target the player moves towards
+        self.find_player_target(self.collideable, True)
 
         # - text setup -
         self.small_font = Font(resource_path(fonts['small_font']), 'white')
@@ -259,6 +263,27 @@ class Level:
     def set_pause(self, bool=True):
         self.pause = bool
 
+# -- other --
+
+    # TODO sometimes spawns inside tile
+    def find_player_target(self, tiles, init=False):
+        head = self.player.sprite.get_head()
+        # if target has been collected generate a new one
+        if head.hitbox.collidepoint(self.player_target) or init:
+            self.player_target = (randint(0, self.screen_rect.width),
+                                  randint(0, self.screen_rect.height))
+
+            # continue to randomly generate point until point not in a tile
+            repeat = True
+            while repeat:
+                for tile in tiles:
+                    if tile.hitbox.collidepoint(self.player_target):
+                        self.player_target = (randint(0, self.screen_rect.width),
+                                              randint(0, self.screen_rect.height))
+                        repeat = True # point has been re-randomized and needs to be tested again
+                        break
+                    repeat = False  # point has not yet failed testing
+
 # -------------------------------------------------------------------------------- #
 
     # updates the level allowing tile scroll and displaying tiles to screen
@@ -269,6 +294,13 @@ class Level:
 
         # -- INPUT --
         self.get_input()
+        if pygame.mouse.get_pressed(3)[0]:
+            in_tile = False
+            for tile in self.collideable:
+                if tile.hitbox.collidepoint(mouse_pos):
+                    in_tile = True
+            if not in_tile:
+                self.player_target = mouse_pos
 
         # -- CHECKS (For the previous frame)  --
         if not self.pause:
@@ -297,13 +329,15 @@ class Level:
                     self.tiles_in_screen.append(tile)'''
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
-            self.player.update(self.collideable, mouse_pos, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            self.player.update(self.collideable, self.player_target, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            self.find_player_target(self.collideable)
             #self.all_sprites.update(scroll_value)'''
 
         # -- RENDER --
         # Draw
         self.player.sprite.draw()
-        self.draw_tile_group(self.collideable)
+        if not self.dev_debug:
+            self.draw_tile_group(self.collideable)
         #self.draw_tile_group(self.hazards)
 
         # must be after other renders to ensure menu is drawn last
@@ -313,7 +347,6 @@ class Level:
         # Dev Tools
         if self.dev_debug:
             '''put debug tools here'''
-            pygame.draw.line(self.screen_surface, 'red', (0, 0), (15, 15), 1)
             for tile in self.collideable:
                 pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
-
+            pygame.draw.circle(self.screen_surface, 'red', self.player_target, 2)

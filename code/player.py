@@ -96,14 +96,18 @@ class Player(pygame.sprite.Sprite):
     def invoke_respawn(self):
         self.respawn = True
 
-    def get_respawn(self):
-        return self.respawn
-
     def player_respawn(self, spawn):
         self.rect.x, self.rect.y = spawn.x, spawn.y  # set position to respawn point
         self.sync_hitbox()
         self.direction = pygame.math.Vector2(0, 0)  # reset movement
         self.respawn = False
+
+# -- getters and setters --
+    def get_respawn(self):
+        return self.respawn
+
+    def get_head(self):
+        return self.head
 
 # -- update methods --
 
@@ -178,6 +182,20 @@ class Body_Segment:
         self.parent_seg = parent_body_segment
         self.child_seg = None
 
+        # segment values
+        self.seg_spacing = segment_spacing
+        self.max_flex = max_flex
+        self.radius = self.seg_spacing // 2  # collisions and drawn circle
+        if self.parent_seg is None:
+            self.head = True
+        else:
+            self.head = False
+
+        # collision
+        # TODO ensure not inside tile before creating legs
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
+        self.collision_tolerance = tile_size
+
         # legs
         self.has_legs = legs
         # TODO define these parameters better (mainly for testing)
@@ -189,19 +207,6 @@ class Body_Segment:
         time_offset = 0
         self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, target_displacement,
                              time_offset, leg_thickness)]
-
-        # segment values
-        self.seg_spacing = segment_spacing
-        self.max_flex = max_flex
-        self.radius = self.seg_spacing // 2  # collisions and drawn circle
-        if self.parent_seg is None:
-            self.head = True
-        else:
-            self.head = False
-
-        # collision
-        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
-        self.collision_tolerance = tile_size
 
     # --- MOVEMENT ---
 
@@ -243,7 +248,7 @@ class Body_Segment:
 
         # - Move point -
         # get how much the x and y should be changed by (so the total displacement is always constant)
-        if self.head and displacement > self.move_speed:  # limit movement displacement towards cursor for head
+        if self.head and displacement > self.move_speed:  # limit movement displacement towards target for head
             displacement = self.move_speed
 
         # calculate how much the individual x and y coord should be modified for a total displacement in given direction
@@ -309,8 +314,13 @@ class Body_Segment:
             point = self.parent_seg.get_prev_pos()
         self.prev_pos = self.pos
 
-        # moves towards point based on spacing
-        hyp = self.adjusted_distance(point)
+        # moves towards target point
+        # if head, move without adjusting distance to point
+        if self.head:
+            hyp = get_distance(self.pos, point)
+        # if normal body segment, move towards parent body segment accounting for segment spacing.
+        else:
+            hyp = self.adjusted_distance(point)
         self.move(point, hyp)
 
         # update position and collision detection
@@ -375,84 +385,59 @@ class LegPair:
         if self.target_disp > self.max_leg_length:
             self.target_disp = self.max_leg_length
 
-        self.foot_targets = [[0, 0], [0, 0]]  # target the foot moves to [left, right]
+        # targets points the feet move to [left, right]
+        self.targets = [[self.anchor[0], self.anchor[1]],
+                        [self.anchor[0], self.anchor[1]]]
         self.find_targets()
 
-        target_radius = 8  # MUST BE GREATER THAN 0
-        # keeps track of feet targets for collisions [left, right]
-        self.foot_hitboxes = [pygame.Rect(self.foot_targets[0], (target_radius, target_radius)),
-                              pygame.Rect(self.foot_targets[1], (target_radius, target_radius))]
-
         # - foot -
-        self.feet = [self.foot_targets[0], self.foot_targets[1]]  # the leg's foot points [left, right]
+        self.feet = [[self.anchor[0], self.anchor[1]],
+                     [self.anchor[0], self.anchor[1]]]  # the leg's foot points [left, right]
         self.foot_move = [False, False]  # whether a foot should move or not [left, right]
+
+        # - elbow -
+        self.elbows = [[self.anchor[0], self.anchor[1]], [self.anchor[0], self.anchor[1]]]
 
         # - lerp-
         self.lerp_increment = 0.05  # value added to lerp per frame when required
         self.lerp = [0, 0]  # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) []left, right]
 
-    def collision_x(self, target, tiles):
+    def collision_x(self, new_pos, prev_pos, tiles):
+        # pos == prev pos but with x coordinate changed ready for collision testing
+        pos = [new_pos[0], prev_pos[1]]
         # -- X Collisions --
         for tile in tiles:
-            if tile.hitbox.colliderect(target):
-                # - normal collision checks -
-                # abs ensures only the desired side registers collision
-                if abs(tile.hitbox.right - target.left) < self.collision_tolerance:
-                    target.left = tile.hitbox.right
-                elif abs(tile.hitbox.left - target.right) < self.collision_tolerance:
-                    target.right = tile.hitbox.left
-        return target
+            if tile.hitbox.collidepoint(pos):
+                # if inside tile, return x of prev position (ASSUMES DOESNT START IN TILE)
+                return prev_pos[0]
+        # if not inside tile, return x of new position
+        return new_pos[0]
 
-    def collision_y(self, target, tiles):
-        # -- Y Collisions --
+    def collision_y(self, new_pos, prev_pos, tiles):
+        # pos == prev pos but with x coordinate changed ready for collision testing
+        pos = [prev_pos[0], new_pos[1]]
+        # -- X Collisions --
         for tile in tiles:
-            if tile.hitbox.colliderect(target):
-                # abs ensures only the desired side registers collision
-                if abs(tile.hitbox.top - target.bottom) < self.collision_tolerance:
-                    target.bottom = tile.hitbox.top
-                elif abs(tile.hitbox.bottom - target.top) < self.collision_tolerance:
-                    target.top = tile.hitbox.bottom
-        return target
+            if tile.hitbox.collidepoint(pos):
+                # if inside tile, return x of prev position (ASSUMES DOESNT START IN TILE)
+                return prev_pos[1]
+        # if not inside tile, return x of new position
+        return new_pos[1]
 
-    def find_targets(self, tiles=pygame.sprite.Group()):
+    def find_targets(self):
         left_angle = math.radians(self.rot + self.target_angle)
         right_angle = math.radians(self.rot - self.target_angle)
 
-        # left foot
-        self.foot_targets[0] = (self.anchor[0] + math.sin(left_angle) * self.target_disp,
-                                self.anchor[1] + math.cos(left_angle) * self.target_disp)
-        # right foot
-        self.foot_targets[1] = (self.anchor[0] + math.sin(right_angle) * self.target_disp,
-                                self.anchor[1] + math.cos(right_angle) * self.target_disp)
+        self.targets[0] = [self.anchor[0] + math.sin(left_angle) * self.target_disp,
+                           self.anchor[1] + math.cos(left_angle) * self.target_disp]
+        self.targets[1] = [self.anchor[0] + math.sin(right_angle) * self.target_disp,
+                           self.anchor[1] + math.cos(right_angle) * self.target_disp]
 
-        '''print(self.foot_hitboxes[0])
-        self.foot_hitboxes[0].centerx = self.anchor[0] + math.sin(left_angle) * self.target_disp
-        self.foot_hitboxes[1].centerx = self.anchor[0] + math.sin(right_angle) * self.target_disp
-        self.foot_hitboxes[0] = self.collision_x(self.foot_hitboxes[0], tiles)
-        self.foot_hitboxes[1] = self.collision_x(self.foot_hitboxes[1], tiles)
-
-        self.foot_hitboxes[0].centery = self.anchor[1] + math.sin(left_angle) * self.target_disp
-        self.foot_hitboxes[1].centery = self.anchor[1] + math.sin(right_angle) * self.target_disp
-        self.foot_hitboxes[0] = self.collision_y(self.foot_hitboxes[0], tiles)
-        self.foot_hitboxes[1] = self.collision_y(self.foot_hitboxes[1], tiles)'''
-
-
-    # TODO optimise use of trig
-    def update(self, pos, rot, distance, tiles):
+    def find_feet(self, pos, rot, distance, tiles):
         self.anchor = pos
         self.rot = rot
         self.leg_distance[0] += distance
         self.leg_distance[1] += distance
-
-        # -- Calculate foot target if not moving foot --
-        self.find_targets()
-
-        # TODO test render for targets
-        '''pygame.draw.circle(self.surface, 'red', self.foot_targets[0], 5, 1)
-        pygame.draw.circle(self.surface, 'red', self.foot_targets[1], 5, 1)
-        pygame.draw.rect(self.surface, 'yellow', self.foot_hitboxes[0], 1)
-        pygame.draw.rect(self.surface, 'yellow', self.foot_hitboxes[1], 1)'''
-
 
         # -- Move Feet --
         # Check if foot needs to move. If it does, zero distance for next move and set bool
@@ -466,28 +451,33 @@ class LegPair:
             self.foot_move[1] = True
 
         # Lerps feet towards targets (always makes it in time no matter distance because % distance is used) (end lerp if at 100%)
+        # - left -
         if self.foot_move[0]:
-            self.feet[0] = lerp2D(self.feet[0], self.foot_targets[0], self.lerp[0])
+            # lerp towards target
+            posmod = lerp2D(self.feet[0], self.targets[0], self.lerp[0])
+            # check feet for collisions
+            self.feet[0][0] = self.collision_x(posmod, self.feet[0], tiles)
+            self.feet[0][1] = self.collision_y(posmod, self.feet[0], tiles)
+            # increases lerp
             self.lerp[0] += self.lerp_increment
             # stop and reset lerp if at 100% (foot at target)
             if self.lerp[0] >= 1:
                 self.foot_move[0] = False
                 self.lerp[0] = 0
+        # - right -
         if self.foot_move[1]:
-            self.feet[1] = lerp2D(self.feet[1], self.foot_targets[1], self.lerp[1])
+            # lerp towards target
+            posmod = lerp2D(self.feet[1], self.targets[1], self.lerp[1])
+            # check feet for collisions
+            self.feet[1][0] = self.collision_x(posmod, self.feet[1], tiles)
+            self.feet[1][1] = self.collision_y(posmod, self.feet[1], tiles)
+            # increase lerp
             self.lerp[1] += self.lerp_increment
             if self.lerp[1] >= 1:
                 self.foot_move[1] = False
                 self.lerp[1] = 0
 
-    # TODO optimise use of trig
-    def draw(self):
-        # ------------ FEET BALLS ---------------
-        pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
-        pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
-
-        #------------- LEG LINES ----------------
-        # TODO name variables better and optimise
+    def find_elbows(self, tiles):
         leg_seg_length = self.max_leg_length // (self.num_elbows + 1)
 
         b = get_distance(self.anchor, self.feet[0])
@@ -507,19 +497,42 @@ class LegPair:
         angle_to_foot = math.radians(get_angle(self.anchor, self.feet[0]))
         angle = angle_to_foot - math.acos(law_cosines)
         # find elbow
-        elbow = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
-        # Render
-        pygame.draw.line(self.surface, 'black', self.anchor, elbow, self.leg_thickness)
-        pygame.draw.line(self.surface, 'black', elbow, self.feet[0], self.leg_thickness)
+        posmod = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
+        self.elbows[0][0] = self.collision_x(posmod, self.elbows[0], tiles)
+        self.elbows[0][1] = self.collision_y(posmod, self.elbows[0], tiles)
 
         # --- Up Elbow ---  (right)
         angle_to_foot = math.radians(get_angle(self.anchor, self.feet[1]))
         angle = math.acos(law_cosines) + angle_to_foot
         # find elbow
-        elbow = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
-        # Render
-        pygame.draw.line(self.surface, 'black', self.anchor, elbow, self.leg_thickness)
-        pygame.draw.line(self.surface, 'black', elbow, self.feet[1], self.leg_thickness)
+        posmod = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
+        self.elbows[1][0] = self.collision_x(posmod, self.elbows[1], tiles)
+        self.elbows[1][1] = self.collision_y(posmod, self.elbows[1], tiles)
+
+    # TODO optimise use of trig
+    def update(self, pos, rot, distance, tiles):
+
+        self.find_targets()
+        self.find_feet(pos, rot, distance, tiles)
+        self.find_elbows(tiles)
+
+        # TODO test render for targets
+        #pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
+        #pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
+
+    # TODO optimise use of trig
+    def draw(self):
+        # ------------ FEET BALLS ---------------
+        pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
+        pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
+
+        # ------------ LEG LINES ----------------
+        # --- Down Elbow ---  (left)
+        pygame.draw.line(self.surface, 'black', self.anchor, self.elbows[0], self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', self.elbows[0], self.feet[0], self.leg_thickness)
+        # --- Up Elbow ---  (right)
+        pygame.draw.line(self.surface, 'black', self.anchor, self.elbows[1], self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', self.elbows[1], self.feet[1], self.leg_thickness)
 
         # TODO testing 0 elbow
         #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
