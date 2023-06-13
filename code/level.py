@@ -78,9 +78,6 @@ class Level:
         self.all_tile_sprites.update(scroll_value)  # applies new scroll to all tile sprites
         self.all_object_sprites.update(scroll_value)  # applies new scroll to all object sprites'''
 
-        self.player_target = (0, 0)  # target the player moves towards
-        self.find_player_target(self.collideable, True)
-
         # - text setup -
         self.small_font = Font(resource_path(fonts['small_font']), 'white')
         self.large_font = Font(resource_path(fonts['large_font']), 'white')
@@ -260,47 +257,19 @@ class Level:
         self.large_font.render('PAUSED', self.screen_surface, (center_object_x(width, self.screen_surface), 20))
 
 # -- getters and setters --
-    def set_pause(self, bool=True):
-        self.pause = bool
-
-# -- other --
-
-    # TODO sometimes spawns inside tile
-    def find_player_target(self, tiles, init=False):
-        head = self.player.sprite.get_head()
-        # if target has been collected generate a new one
-        if head.hitbox.collidepoint(self.player_target) or init:
-            self.player_target = (randint(0, self.screen_rect.width),
-                                  randint(0, self.screen_rect.height))
-
-            # continue to randomly generate point until point not in a tile
-            repeat = True
-            while repeat:
-                for tile in tiles:
-                    if tile.hitbox.collidepoint(self.player_target):
-                        self.player_target = (randint(0, self.screen_rect.width),
-                                              randint(0, self.screen_rect.height))
-                        repeat = True # point has been re-randomized and needs to be tested again
-                        break
-                    repeat = False  # point has not yet failed testing
+    def set_pause(self, pause=True):
+        self.pause = pause
 
 # -------------------------------------------------------------------------------- #
 
     # updates the level allowing tile scroll and displaying tiles to screen
     # order is equivalent of layers
-    def update(self, mouse_pos, dt, fps):
+    def update(self, mouse_pos, dt):
         # #### INPUT > GAME(checks THEN UPDATE) > RENDER ####
         # checks deal with previous frames interactions. Update creates interactions for this frame which is then diplayed
 
         # -- INPUT --
         self.get_input()
-        if pygame.mouse.get_pressed(3)[0]:
-            in_tile = False
-            for tile in self.collideable:
-                if tile.hitbox.collidepoint(mouse_pos):
-                    in_tile = True
-            if not in_tile:
-                self.player_target = mouse_pos
 
         # -- CHECKS (For the previous frame)  --
         if not self.pause:
@@ -329,8 +298,7 @@ class Level:
                     self.tiles_in_screen.append(tile)'''
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
-            self.player.update(self.collideable, self.player_target, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
-            self.find_player_target(self.collideable)
+            self.player.update(self.collideable, dt, mouse_pos)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
             #self.all_sprites.update(scroll_value)'''
 
         # -- RENDER --
@@ -349,4 +317,7 @@ class Level:
             '''put debug tools here'''
             for tile in self.collideable:
                 pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
-            pygame.draw.circle(self.screen_surface, 'red', self.player_target, 2)
+            # TODO testing
+            for point in self.player.sprite.brain.path:
+                pygame.draw.circle(self.screen_surface, 'green', point, 2)
+            pygame.draw.circle(self.screen_surface, 'pink', self.player.sprite.brain.target, 2)

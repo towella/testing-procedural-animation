@@ -1,6 +1,7 @@
 o optimise trig code with dot products
 
 o Restrict joint rotation
+o Add torque to body segments
 
 o fix the staggering of the legs
 o fix the move_time_offset of the legs
@@ -14,4 +15,9 @@ o Improve collisions
     - elbow
     - body segment
 
-o Add pathfinding
+o Make pathfinding work with:
+    - collisions (use sprite circle colliders?)
+    - joint restriction
+o Path often overshoots target
+o Optimise pathfinding
+o Fix occasional hanging bug

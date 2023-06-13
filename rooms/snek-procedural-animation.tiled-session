@@ -5,8 +5,8 @@
     },
     "activeFile": "tiled_rooms/room_0.tmx",
     "expandedProjectPaths": [
-        "tiled_templates",
         "tiled_rooms",
+        "tiled_templates",
         "."
     ],
     "file.lastUsedOpenFilter": "All Files (*)",
@@ -72,14 +72,14 @@
         },
         "tiled_rooms/room_0.tmx": {
             "expandedGroupLayers": [
-                3,
-                4
+                4,
+                3
             ],
-            "scale": 0.9987,
+            "scale": 1.0154,
             "selectedLayer": 2,
             "viewCenter": {
-                "x": 253.32932812656458,
-                "y": 136.17703013918094
+                "x": 253.1022257238527,
+                "y": 136.89186527476852
             }
         }
     },

@@ -1,5 +1,6 @@
 import pygame, math
-from game_data import tile_size, controller_map
+from random import randint
+from game_data import tile_size, controller_map, screen_width, screen_height
 from lighting import Light
 from support import get_angle, get_distance, lerp2D
 
@@ -13,6 +14,7 @@ class Player(pygame.sprite.Sprite):
         self.controllers = self.level.controllers
 
         # -- player setup --
+        # - Body -
         self.speed = 3
         self.seg_spacing = segment_spacing
         self.max_seg_speed = 5
@@ -32,6 +34,10 @@ class Player(pygame.sprite.Sprite):
         self.collision_tolerance = tile_size
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
         self.vertical_corner_correction_boost = 4
+
+
+        # - Brain -
+        self.brain = Brain(self.head)
 
 # -- initialisation --
 
@@ -116,10 +122,7 @@ class Player(pygame.sprite.Sprite):
         self.rect.y -= int(scroll_value[0])
         self.sync_hitbox()
 
-    def update(self, tiles, mouse_pos, dt): #, scroll_value, current_spawn):
-        # reset without interfering with each other.
-        #self.hitbox = self.norm_hitbox  # same with hitbox as terminal vel
-        #self.sync_hitbox()  # just in case
+    def update(self, tiles, dt, mouse_pos): #, scroll_value, current_spawn):
 
         # respawns player if respawn has been evoked
         #if self.respawn:
@@ -129,29 +132,20 @@ class Player(pygame.sprite.Sprite):
         #self.get_input(dt, tiles)
 
         # -- CHECKS/UPDATE --
+        # - update brain -
+        # TODO move to brain update
+        self.brain.update(tiles, mouse_pos)
+        target = self.brain.get_target()
 
-        # - collision and movement -
-        # MOVEMENT
+
+        # - update body -
         for i in range(len(self.segments)):
             # if not a head don't pass mouse cursor (point is based on parent seg)
             if i > 0:
                 self.segments[i].update(tiles)
-            # if head pass mouse cursor as point to follow
+            # if head pass player target as point to move towards
             else:
-                self.segments[i].update(tiles, mouse_pos)
-
-        # COLLISIONS
-        # applies direction to player then resyncs hitbox (included in most movement/collision functions)
-        # HITBOX MUST BE SYNCED AFTER EVERY MOVE OF PLAYER RECT
-        # x and y collisions are separated to make diagonal collisions easier and simpler to handle
-        # x
-        '''self.sync_hitbox()
-        self.collision_x(self.hitbox, tiles)'''
-
-        # y
-        # applies direction to player then resyncs hitbox
-        '''self.apply_y_direction(dt)  # gravity
-        self.collision_y(self.hitbox, tiles)'''
+                self.segments[i].update(tiles, target)
 
         # scroll shouldn't have collision applied, it is separate movement
         #self.apply_scroll(scroll_value)
@@ -168,6 +162,8 @@ class Player(pygame.sprite.Sprite):
         for light in self.lights:
             light.draw()
 
+
+# -- BODY --
 
 class Body_Segment:
     def __init__(self, surface, spawn, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
@@ -222,7 +218,7 @@ class Body_Segment:
 
         # - Limit angle (limit segment joint's flex) -
         # relative_angle = the new angle - the neutral alignment from last frame before changing to face point
-        if self.head:
+        '''if self.head:
             child_rot = self.child_seg.get_rot()
             relative_angle = angle - child_rot
             # relative angle should always be less than 180
@@ -231,16 +227,16 @@ class Body_Segment:
             elif relative_angle < -180:
                 relative_angle = 180 + (relative_angle + 180)
             # TODO head and other segs are all the same now?? no parents required anymore!
-            '''#else:
+            #else:
                 #prev_point = self.parent_seg.get_prev_pos()  # get parent position before movement
                 #prev_alignment = get_angle(self.pos, prev_point)  # get neutral alignment angle from before parent moved
-                #relative_angle = angle - prev_alignment  # 'displacement' angle from neutral. + or - indicates > or < neutral'''
+                #relative_angle = angle - prev_alignment  # 'displacement' angle from neutral. + or - indicates > or < neutral
             # limit rotation
             if abs(relative_angle) > self.max_flex:
                 if relative_angle > 0:
                     angle = child_rot + self.max_flex
                 elif relative_angle < 0:
-                    angle = child_rot - self.max_flex
+                    angle = child_rot - self.max_flex'''
 
         # - update and adjust angles -
         self.rot = angle  # update segment rotation
@@ -537,3 +533,170 @@ class LegPair:
         # TODO testing 0 elbow
         #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
         #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[1], self.leg_thickness)
+
+
+# -- BRAIN --
+
+class Brain:
+    def __init__(self, head_segment):
+        self.head = head_segment
+
+        # -- pathfinding --
+        self.target = self.head.get_pos()
+        self.path = [self.head.get_pos()]  # start path as current position (no target yet defined). Len must be > 0
+        self.path_precision = 15  # !!!!! should be less than tile size !!!!!
+
+    # -- calculate propeties --
+
+    def pathfind(self, target, tiles):
+        # TODO what size should this rect be??
+        target_rect = pygame.Rect(target, (self.path_precision, self.path_precision))
+        # neighbours includes cardinal and diagonal neighbours
+        neighbours = [(self.path_precision, 0),
+                      (0, self.path_precision),
+                      (-self.path_precision, 0),
+                      (0, -self.path_precision),
+                      (self.path_precision, self.path_precision),
+                      (self.path_precision, -self.path_precision),
+                      (-self.path_precision, self.path_precision),
+                      (-self.path_precision, -self.path_precision)]
+        start = (int(self.head.get_pos()[0]), int(self.head.get_pos()[1]))
+        # for open and closed dicts: {(xpos, ypos): nodeInstance}
+        open = {start: PathNode(start, 0, start, target)}  # nodes to be evaluated (initally only contains starting node)
+        closed = {}  # nodes that have been evalutated
+
+        run = True
+        while run:
+            # find node with lowest f cost in open
+            current_node = open[list(open.keys())[0]]
+            for node in open.keys():
+                # if node has better f cost than current node or (the f costs are the same but
+                # the h cost is better), set to current
+                if open[node].get_f() < current_node.get_f() or \
+                  (open[node].get_f() == current_node.get_f() and open[node].get_h() < current_node.get_h()):
+                    current_node = open[node]
+
+            current_pos = current_node.get_pos()
+            # update dicts
+            closed[current_pos] = current_node  # add node to closed
+            del open[current_pos]  # remove node from open
+
+            # if the current node has the same pos as the target, end and return full path
+            if target_rect.collidepoint(current_pos):
+                run = False
+
+                node = closed[current_pos]
+                path = [target]
+                # keep adding parent positions to path until start node is reached. Follow path using parents
+                # does not include start node position (already there)
+                while node.get_pos() != start:
+                    path.append(node.get_pos())
+                    node = node.get_parent()
+                # exit loop with the full path (reversed so the start is at the start and the target is at the end)
+                path.reverse()
+                return path
+
+            # if not the target, check through all the neighbouring positions
+            for i in range(len(neighbours)):
+                # find adjacent coordinate
+                neighbour_pos = (int(current_pos[0] + neighbours[i][0]), int(current_pos[1] + neighbours[i][1]))
+
+                # check node is not already in closed before looping over tiles, if it is skip to next neighbour
+                if neighbour_pos not in closed.keys():
+                    # checks if neighbour is traversable or not, if not skip to next neighbour
+                    traversable = True
+                    for tile in tiles:
+                        if tile.hitbox.collidepoint(neighbour_pos):
+                            traversable = False
+                            break
+                    if traversable:
+
+                        neighbour_g = current_node.get_g() + self.path_precision  # increases g one node further along path
+                        # if it is either not in open or path to neighbour is shorter (based on g cost), add to open
+                        if neighbour_pos not in open.keys() or neighbour_g < open[neighbour_pos].get_g():
+                            # set/update node in open
+                            open[neighbour_pos] = PathNode(neighbour_pos, neighbour_g, start, target, current_node)
+
+    def find_target(self, tiles, mouse_pos):
+        # TODO testing, if mouse has clicked, change target
+        if pygame.mouse.get_pressed(3)[0]:
+            in_tile = False
+            for tile in tiles:
+                if tile.hitbox.collidepoint(mouse_pos):
+                    in_tile = True
+            if not in_tile:
+                self.target = mouse_pos
+
+        # if target has been collected generate a new one
+        if self.head.hitbox.collidepoint(self.target):
+            self.target = (randint(0, screen_width), randint(0, screen_height))
+
+            # continue to randomly generate point until point not in a tile
+            repeat = True
+            while repeat:
+                for tile in tiles:
+                    if tile.hitbox.collidepoint(self.target):
+                        self.target = (randint(0, screen_width), randint(0, screen_height))
+                        repeat = True  # point has been re-randomized and needs to be tested again
+                        break
+                    repeat = False  # point has not yet failed testing
+
+    # -- getters and setters --
+    # returns next point in the path to the real final target
+    def get_target(self):
+        return self.path[0]
+
+    # -- update --
+    def update(self, tiles, mouse_pos):
+        # find target (if target needs to be found)
+        self.find_target(tiles, mouse_pos)
+
+        # create or modify path to target
+        if self.head.hitbox.collidepoint(self.path[0]):
+            self.path = self.path[1:]
+        # if path is empty or the final point (the target) != to the current target, recalculate path
+        if len(self.path) == 0 or self.path[-1] != self.target:
+            self.path = self.pathfind(self.target, tiles)
+
+
+class PathNode:
+    def __init__(self, pos, g_cost, start, target, parent=None):
+        # position
+        self.pos = pos
+
+        # points
+        self.start = start
+        self.target = target
+
+        # parents and children
+        self.parent = parent
+        self.children = []
+
+        # costs
+        # TODO may cause problems if this is incorrect way of calculating them
+        self.g = g_cost  # distance from node to start node (not counting this node)
+        self.h = int(get_distance(self.pos, target))  # distance from node to target node (not counting this node)
+        self.f = self.g + self.h
+
+    # -- getters and setters --
+
+    def get_pos(self):
+        return self.pos
+
+    def get_g(self):
+        return self.g
+
+    def get_h(self):
+        return self.h
+
+    def get_f(self):
+        return self.f
+
+    def get_parent(self):
+        return self.parent
+
+    def get_children(self):
+        return self.children
+
+    def add_child(self, node):
+        self.children.append(node)
