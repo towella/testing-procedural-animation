@@ -18,6 +18,5 @@ o Improve collisions
 o Make pathfinding work with:
     - collisions (use sprite circle colliders?)
     - joint restriction
-o Path often overshoots target
 o Optimise pathfinding
-o Fix occasional hanging bug
+o Fix occasional hanging bug? optimisation? Target from path in tile?

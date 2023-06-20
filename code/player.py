@@ -165,8 +165,10 @@ class Player(pygame.sprite.Sprite):
 
 # -- BODY --
 
-class Body_Segment:
+class Body_Segment(pygame.sprite.Sprite):
     def __init__(self, surface, spawn, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
+        super().__init__()
+
         self.surface = surface  # segment render surface
         self.pos = [spawn.x, spawn.y]  # segment position
         self.prev_pos = self.pos
@@ -190,6 +192,7 @@ class Body_Segment:
         # collision
         # TODO ensure not inside tile before creating legs
         self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
+        self.rect = self.hitbox
         self.collision_tolerance = tile_size
 
         # legs
@@ -300,6 +303,7 @@ class Body_Segment:
 
     def sync_hitbox(self):
         self.hitbox.center = self.pos
+        self.rect = self.hitbox
 
     def update(self, tiles, point=(0, 0)):
         # reset direction vector
@@ -549,14 +553,18 @@ class Brain:
     # -- calculate propeties --
 
     def pathfind(self, target, tiles):
-        # TODO what size should this rect be??
-        target_rect = pygame.Rect(target, (self.path_precision, self.path_precision))
+        # TODO simplify code
+        target_rect = pygame.Rect((target[0] - self.path_precision // 2, target[1] - self.path_precision // 2), (self.path_precision, self.path_precision))
         # neighbours includes cardinal and diagonal neighbours
         neighbours = [(self.path_precision, 0),
                       (0, self.path_precision),
                       (-self.path_precision, 0),
                       (0, -self.path_precision),
                       (self.path_precision, self.path_precision),
+                      (self.path_precision, -self.path_precision),
+                      (-self.path_precision, self.path_precision),
+                      (-self.path_precision, -self.path_precision)]
+        diagonals = [(self.path_precision, self.path_precision),
                       (self.path_precision, -self.path_precision),
                       (-self.path_precision, self.path_precision),
                       (-self.path_precision, -self.path_precision)]
@@ -572,8 +580,7 @@ class Brain:
             for node in open.keys():
                 # if node has better f cost than current node or (the f costs are the same but
                 # the h cost is better), set to current
-                if open[node].get_f() < current_node.get_f() or \
-                  (open[node].get_f() == current_node.get_f() and open[node].get_h() < current_node.get_h()):
+                if open[node].get_f() < current_node.get_f() or (open[node].get_f() == current_node.get_f() and open[node].get_h() < current_node.get_h()):
                     current_node = open[node]
 
             current_pos = current_node.get_pos()
@@ -594,12 +601,16 @@ class Brain:
                     node = node.get_parent()
                 # exit loop with the full path (reversed so the start is at the start and the target is at the end)
                 path.reverse()
+                # removes final target in path that is not the destination target (final target may overshoot
+                # due to destination target hitbox). Checks if the path is >= 2 to prevent index out of range.
+                if len(path) >= 2:
+                    del path[-2]
                 return path
 
             # if not the target, check through all the neighbouring positions
-            for i in range(len(neighbours)):
+            for i in neighbours:
                 # find adjacent coordinate
-                neighbour_pos = (int(current_pos[0] + neighbours[i][0]), int(current_pos[1] + neighbours[i][1]))
+                neighbour_pos = (int(current_pos[0] + i[0]), int(current_pos[1] + i[1]))
 
                 # check node is not already in closed before looping over tiles, if it is skip to next neighbour
                 if neighbour_pos not in closed.keys():
