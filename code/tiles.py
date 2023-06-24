@@ -43,6 +43,7 @@ class CollideableTile(StaticTile):
         self.image = surface  # image is passed tile surface
         self.hitbox = self.image.get_rect()
         self.hitbox.topleft = pos
+        self.radius = self.hitbox.width // 2  # assumes hitbox is square
 
     # allows all tiles to scroll at a set speed creating camera illusion
     def apply_scroll(self, scroll_value, use_parallax=False):

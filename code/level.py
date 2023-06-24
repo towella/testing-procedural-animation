@@ -154,7 +154,7 @@ class Level:
             # finds the correct starting position corresponding to the last room/transition
             # TODO remove need for self.player_spawns
             spawn = self.player_spawns[self.starting_spawn]
-            body_segments = 20
+            body_segments = 10
             segment_spacing = 20
             player = Player(self, spawn, body_segments, segment_spacing)
             sprite_group.add(player)
@@ -317,6 +317,7 @@ class Level:
             '''put debug tools here'''
             for tile in self.collideable:
                 pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
+                pygame.draw.circle(self.screen_surface, 'green', tile.hitbox.center, tile.radius, 1)
             # TODO testing
             for point in self.player.sprite.brain.path:
                 pygame.draw.circle(self.screen_surface, 'green', point, 2)

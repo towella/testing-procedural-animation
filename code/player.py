@@ -15,9 +15,8 @@ class Player(pygame.sprite.Sprite):
 
         # -- player setup --
         # - Body -
-        self.speed = 3
         self.seg_spacing = segment_spacing
-        self.max_seg_speed = 5
+        self.max_seg_speed = 3
         self.max_flex = 30
         self.segments = self.create_body(spawn, segments, segment_spacing)
         self.head = self.segments[0]
@@ -37,7 +36,7 @@ class Player(pygame.sprite.Sprite):
 
 
         # - Brain -
-        self.brain = Brain(self.head)
+        self.brain = Brain(self.head, self.surface)
 
 # -- initialisation --
 
@@ -49,10 +48,10 @@ class Player(pygame.sprite.Sprite):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
-            if i == 5 or i == 0:
+            if i == 5:
                 body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
             else:
-                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
+                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
             body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
             # therefore child of last point (i) is i + 1
 
@@ -191,21 +190,19 @@ class Body_Segment(pygame.sprite.Sprite):
 
         # collision
         # TODO ensure not inside tile before creating legs
-        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], self.radius, self.radius)
+        diameter = self.radius * 2
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], diameter, diameter)
         self.rect = self.hitbox
         self.collision_tolerance = tile_size
 
         # legs
         self.has_legs = legs
         # TODO define these parameters better (mainly for testing)
-        leg_thickness = 3
-        max_leg_length = 60
+        max_leg_length = 50
         number_elbows = 1
         target_angle = 40
-        target_displacement = 35
-        time_offset = 0
-        self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, target_displacement,
-                             time_offset, leg_thickness)]
+        step_interval = 80
+        self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval)]
 
     # --- MOVEMENT ---
 
@@ -256,6 +253,16 @@ class Body_Segment(pygame.sprite.Sprite):
 
     # --- COLLISIONS ---
 
+    def collision(self, tiles):
+        for tile in tiles:
+            distance = get_distance(self.pos, tile.hitbox.center)
+            if distance - (tile.radius + self.radius) < 0:
+                angle = get_angle(self.pos, self.prev_pos)  # angle to move back towards where seg came from
+                self.hitbox.centerx += math.sin(angle) * (tile.radius + self.radius - distance + 1)
+                self.hitbox.centery += math.cos(angle) * (tile.radius + self.radius - distance + 1)
+
+                self.pos = [self.hitbox.centerx, self.hitbox.centery]
+
     # checks collision for a given hitbox against given tiles on the x
     def collision_x(self, tiles):
         # -- X Collisions --
@@ -268,7 +275,7 @@ class Body_Segment(pygame.sprite.Sprite):
                 elif abs(tile.hitbox.left - self.hitbox.right) < self.collision_tolerance:
                     self.hitbox.right = tile.hitbox.left
 
-                self.pos = [self.hitbox.centerx, self.hitbox.centery]
+                self.pos[0] = self.hitbox.centerx
 
     def collision_y(self, tiles):
         # -- Y Collisions --
@@ -280,7 +287,7 @@ class Body_Segment(pygame.sprite.Sprite):
                 elif abs(tile.hitbox.bottom - self.hitbox.top) < self.collision_tolerance:
                     self.hitbox.top = tile.hitbox.bottom
 
-                self.pos = [self.hitbox.centerx, self.hitbox.centery]
+                self.pos[1] = self.hitbox.centery
 
     # --- GETTERS AND SETTERS ---
 
@@ -333,6 +340,8 @@ class Body_Segment(pygame.sprite.Sprite):
         self.sync_hitbox()  # sync hitbox after pos has been moved ready for collision detection
         self.collision_y(tiles)  # y collisions after y movement (separate to x movement)
 
+        # TODO self.collision(tiles)
+
         # -- update legs --
         distance = math.sqrt(self.direction.x ** 2 + self.direction.y ** 2)
         if self.has_legs:
@@ -352,7 +361,7 @@ class Body_Segment(pygame.sprite.Sprite):
             pygame.draw.circle(self.surface, 'green', self.pos, 1)
         pygame.draw.circle(self.surface, 'orange', self.pos, self.radius, 1)
 
-        pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
+        #pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
 
         # TODO TESTING self.rot
         x = math.sin(math.radians(self.rot)) * 12
@@ -362,7 +371,7 @@ class Body_Segment(pygame.sprite.Sprite):
 
 
 class LegPair:
-    def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle=50, target_displacement=50, move_time_offset=0, leg_thickness=2):
+    def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle, step_interval, move_offset=0, leg_thickness=3):
         # - general -
         self.surface = surface
         self.anchor = anchor  # where the leg is joined to the parent object
@@ -374,16 +383,14 @@ class LegPair:
 
         # - leg -
         self.max_leg_length = max_leg_length  # informs length of leg segments
-        # tracks distance of body to feet to determine when to move feet [left, right]
-        # max_leg_distance // 2 creates offset between the legs
-        self.leg_distance = [self.max_leg_length // 2 + move_time_offset, 0 + move_time_offset]  # TODO verify move_time_offset is functional
+        self.step_interval = step_interval
+        # tracks movement of body compared to feet to determine when to move feet [left, right]
+        # step_interval // 2 creates offset between the legs. Move offset for multiple pairs of legs per body seg
+        self.step_timers = [self.step_interval // 2 + move_offset, move_offset]
         self.leg_thickness = leg_thickness
 
         # - foot target -
         self.target_angle = target_angle
-        self.target_disp = target_displacement  # (x, y), displacement of foot targets for x and y relative to seg rot
-        if self.target_disp > self.max_leg_length:
-            self.target_disp = self.max_leg_length
 
         # targets points the feet move to [left, right]
         self.targets = [[self.anchor[0], self.anchor[1]],
@@ -396,7 +403,6 @@ class LegPair:
         self.foot_move = [False, False]  # whether a foot should move or not [left, right]
 
         # - elbow -
-        self.elbows = [[self.anchor[0], self.anchor[1]], [self.anchor[0], self.anchor[1]]]
 
         # - lerp-
         self.lerp_increment = 0.05  # value added to lerp per frame when required
@@ -428,29 +434,35 @@ class LegPair:
         left_angle = math.radians(self.rot + self.target_angle)
         right_angle = math.radians(self.rot - self.target_angle)
 
-        self.targets[0] = [self.anchor[0] + math.sin(left_angle) * self.target_disp,
-                           self.anchor[1] + math.cos(left_angle) * self.target_disp]
-        self.targets[1] = [self.anchor[0] + math.sin(right_angle) * self.target_disp,
-                           self.anchor[1] + math.cos(right_angle) * self.target_disp]
+        self.targets[0] = [self.anchor[0] + math.sin(left_angle) * self.max_leg_length,
+                           self.anchor[1] + math.cos(left_angle) * self.max_leg_length]
+        self.targets[1] = [self.anchor[0] + math.sin(right_angle) * self.max_leg_length,
+                           self.anchor[1] + math.cos(right_angle) * self.max_leg_length]
 
     def find_feet(self, pos, rot, distance, tiles):
         self.anchor = pos
         self.rot = rot
-        self.leg_distance[0] += distance
-        self.leg_distance[1] += distance
+        self.step_timers[0] += distance
+        self.step_timers[1] += distance
 
         # -- Move Feet --
-        # Check if foot needs to move. If it does, zero distance for next move and set bool
-        if self.leg_distance[0] > self.max_leg_length:
-            # TODO if get_distance(self.anchor, self.feet[0]) > self.max_leg_length:
-            self.leg_distance[0] = 0
+        # Check if foot needs to move. If it does, zero timer, sync feet timer offset and set bool
+        if self.step_timers[0] > self.step_interval and not self.foot_move[0]:
+            self.step_timers = [0, self.step_interval // 2]  # resync legs to stagger and reset moving leg
             self.foot_move[0] = True
-        if self.leg_distance[1] > self.max_leg_length:
-            # TODO if get_distance(self.anchor, self.feet[1]) > self.max_leg_length:
-            self.leg_distance[1] = 0
+        if self.step_timers[1] > self.step_interval and not self.foot_move[1]:
+            self.step_timers = [self.step_interval // 2, 0]  # resync legs to stagger and reset moving leg
             self.foot_move[1] = True
 
-        # Lerps feet towards targets (always makes it in time no matter distance because % distance is used) (end lerp if at 100%)
+        # check if leg is overextending, if so move feet
+        # independent of step timers. Will not mess with offset
+        if get_distance(self.anchor, self.feet[0]) > self.max_leg_length:
+            self.foot_move[0] = True
+        if get_distance(self.anchor, self.feet[1]) > self.max_leg_length:
+            self.foot_move[1] = True
+
+        # Lerps feet towards targets (always makes it in time no matter distance because % distance
+        # is used) (end lerp if at 100%)
         # - left -
         if self.foot_move[0]:
             # lerp towards target
@@ -477,48 +489,11 @@ class LegPair:
                 self.foot_move[1] = False
                 self.lerp[1] = 0
 
-    def find_elbows(self, tiles):
-        leg_seg_length = self.max_leg_length // (self.num_elbows + 1)
-
-        b = get_distance(self.anchor, self.feet[0])
-        # b can not be 0 (division by 0 error) May start as zero when anchor == foot meaning leg distance = 0
-        if b == 0:
-            b = 1
-
-        law_cosines = (leg_seg_length ** 2 + b ** 2 - leg_seg_length ** 2) / (2 * leg_seg_length * b)
-        # prevent law_cosines from causing error when being passed into cos: [-1, 1]
-        if law_cosines > 1:
-            law_cosines = 1
-        elif law_cosines < -1:
-            law_cosines = -1
-
-        # Find elbows
-        # --- Down Elbow ---  (left)
-        angle_to_foot = math.radians(get_angle(self.anchor, self.feet[0]))
-        angle = angle_to_foot - math.acos(law_cosines)
-        # find elbow
-        posmod = [self.anchor[0] - math.sin(angle) * leg_seg_length, self.anchor[1] - math.cos(angle) * leg_seg_length]
-        self.elbows[0][0] = self.collision_x(posmod, self.elbows[0], tiles)
-        self.elbows[0][1] = self.collision_y(posmod, self.elbows[0], tiles)
-
-        # --- Up Elbow ---  (right)
-        angle_to_foot = math.radians(get_angle(self.anchor, self.feet[1]))
-        angle = math.acos(law_cosines) + angle_to_foot
-        # find elbow
-        posmod = [self.anchor[0] + math.sin(angle) * leg_seg_length, self.anchor[1] + math.cos(angle) * leg_seg_length]
-        self.elbows[1][0] = self.collision_x(posmod, self.elbows[1], tiles)
-        self.elbows[1][1] = self.collision_y(posmod, self.elbows[1], tiles)
-
     # TODO optimise use of trig
     def update(self, pos, rot, distance, tiles):
 
         self.find_targets()
-        self.find_feet(pos, rot, distance, tiles)
-        self.find_elbows(tiles)
-
-        # TODO test render for targets
-        #pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
-        #pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
+        self.find_feet(pos, rot, int(distance), tiles)  # cast distance to int for memory efficiency
 
     # TODO optimise use of trig
     def draw(self):
@@ -526,45 +501,39 @@ class LegPair:
         pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
         pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
 
-        # ------------ LEG LINES ----------------
-        # --- Down Elbow ---  (left)
-        pygame.draw.line(self.surface, 'black', self.anchor, self.elbows[0], self.leg_thickness)
-        pygame.draw.line(self.surface, 'black', self.elbows[0], self.feet[0], self.leg_thickness)
-        # --- Up Elbow ---  (right)
-        pygame.draw.line(self.surface, 'black', self.anchor, self.elbows[1], self.leg_thickness)
-        pygame.draw.line(self.surface, 'black', self.elbows[1], self.feet[1], self.leg_thickness)
+        # TODO testing
+        pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
+        pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
 
         # TODO testing 0 elbow
-        #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
-        #pygame.draw.line(self.surface, 'black', self.anchor, self.feet[1], self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
+        pygame.draw.line(self.surface, 'black', self.anchor, self.feet[1], self.leg_thickness)
 
 
 # -- BRAIN --
 
 class Brain:
-    def __init__(self, head_segment):
+    def __init__(self, head_segment, surface):
+        self.surface = surface
         self.head = head_segment
 
         # -- pathfinding --
         self.target = self.head.get_pos()
         self.path = [self.head.get_pos()]  # start path as current position (no target yet defined). Len must be > 0
-        self.path_precision = 15  # !!!!! should be less than tile size !!!!!
+        self.path_precision = 15  # 15 !!!!! should be less than tile size !!!!!
 
     # -- calculate propeties --
 
     def pathfind(self, target, tiles):
         # TODO simplify code
         target_rect = pygame.Rect((target[0] - self.path_precision // 2, target[1] - self.path_precision // 2), (self.path_precision, self.path_precision))
+        pygame.draw.rect(self.surface, 'red', target_rect, 1)
         # neighbours includes cardinal and diagonal neighbours
         neighbours = [(self.path_precision, 0),
                       (0, self.path_precision),
                       (-self.path_precision, 0),
                       (0, -self.path_precision),
                       (self.path_precision, self.path_precision),
-                      (self.path_precision, -self.path_precision),
-                      (-self.path_precision, self.path_precision),
-                      (-self.path_precision, -self.path_precision)]
-        diagonals = [(self.path_precision, self.path_precision),
                       (self.path_precision, -self.path_precision),
                       (-self.path_precision, self.path_precision),
                       (-self.path_precision, -self.path_precision)]
@@ -588,25 +557,6 @@ class Brain:
             closed[current_pos] = current_node  # add node to closed
             del open[current_pos]  # remove node from open
 
-            # if the current node has the same pos as the target, end and return full path
-            if target_rect.collidepoint(current_pos):
-                run = False
-
-                node = closed[current_pos]
-                path = [target]
-                # keep adding parent positions to path until start node is reached. Follow path using parents
-                # does not include start node position (already there)
-                while node.get_pos() != start:
-                    path.append(node.get_pos())
-                    node = node.get_parent()
-                # exit loop with the full path (reversed so the start is at the start and the target is at the end)
-                path.reverse()
-                # removes final target in path that is not the destination target (final target may overshoot
-                # due to destination target hitbox). Checks if the path is >= 2 to prevent index out of range.
-                if len(path) >= 2:
-                    del path[-2]
-                return path
-
             # if not the target, check through all the neighbouring positions
             for i in neighbours:
                 # find adjacent coordinate
@@ -614,6 +564,12 @@ class Brain:
 
                 # check node is not already in closed before looping over tiles, if it is skip to next neighbour
                 if neighbour_pos not in closed.keys():
+
+                    # ends when neighbour is in target hitbox (prevents path overshoot and also prevents hanging bug
+                    # where no neighbour can be both in the hitbox and not in a tile).
+                    if target_rect.collidepoint(neighbour_pos):
+                        run = False
+
                     # checks if neighbour is traversable or not, if not skip to next neighbour
                     traversable = True
                     for tile in tiles:
@@ -628,6 +584,19 @@ class Brain:
                             # set/update node in open
                             open[neighbour_pos] = PathNode(neighbour_pos, neighbour_g, start, target, current_node)
 
+        # -- Return full path --
+        node = closed[current_pos]
+        path = [target]
+        # keep adding parent positions to path until start node is reached. Follow path using parents
+        # does not include start node position (already there)
+        while node.get_pos() != start:
+            path.append(node.get_pos())
+            node = node.get_parent()
+        # exit loop with the full path (reversed so the start is at the start and the target is at the end)
+        path.reverse()
+
+        return path
+
     def find_target(self, tiles, mouse_pos):
         # TODO testing, if mouse has clicked, change target
         if pygame.mouse.get_pressed(3)[0]:
@@ -635,6 +604,7 @@ class Brain:
             for tile in tiles:
                 if tile.hitbox.collidepoint(mouse_pos):
                     in_tile = True
+                    break
             if not in_tile:
                 self.target = mouse_pos
 
@@ -668,7 +638,6 @@ class Brain:
         # if path is empty or the final point (the target) != to the current target, recalculate path
         if len(self.path) == 0 or self.path[-1] != self.target:
             self.path = self.pathfind(self.target, tiles)
-
 
 class PathNode:
     def __init__(self, pos, g_cost, start, target, parent=None):

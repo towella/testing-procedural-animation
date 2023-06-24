@@ -3,12 +3,9 @@ o optimise trig code with dot products
 o Restrict joint rotation
 o Add torque to body segments
 
-o fix the staggering of the legs
-o fix the move_time_offset of the legs
-o fix the stretching of the legs when moving backwards
-
-o Add support for inverted insect esque legs
-o Add support for varying elbow segments per leg (including 0 elbows)
+o Implement FABRIK
+    - Add support for inverted insect esque legs
+    - Add support for varying elbow segments per leg (including 0 elbows)
 
 o Improve collisions
     - feet
@@ -16,7 +13,13 @@ o Improve collisions
     - body segment
 
 o Make pathfinding work with:
-    - collisions (use sprite circle colliders?)
+    - collisions (use circle colliders?)
     - joint restriction
 o Optimise pathfinding
-o Fix occasional hanging bug? optimisation? Target from path in tile?
+o Fix hanging bug in pathfinding
+
+o Sprite stacking
+--------------------------------------------------------------------
+
+o Procedurally generated terrain
+o Raycast 3D  projection
