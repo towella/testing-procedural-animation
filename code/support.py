@@ -145,13 +145,17 @@ def get_rect_corners(rect):
 
 
 # returns angle of point from pos in DEGREES
-def get_angle(pos, point):
+def get_angle_deg(pos, point):
     # negative y values to flip the y axis from cartesian to pygame axis (reversed)
     angle = math.degrees(math.atan2(-point[1] - -pos[1], point[0] - pos[0]))
     # makes the angle produced by tan in any quadrant relative to 0 DEG and positive (0 - 360)
     if angle < 0:
         angle = 360 - abs(angle)
-    return angle
+    return angle + 90
+
+
+def get_angle_rad(pos, point):
+    return math.radians(get_angle_deg(pos, point))
 
 
 def get_distance(pos, point):

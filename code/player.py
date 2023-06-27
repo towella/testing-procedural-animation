@@ -2,7 +2,7 @@ import pygame, math
 from random import randint
 from game_data import tile_size, controller_map, screen_width, screen_height
 from lighting import Light
-from support import get_angle, get_distance, lerp2D
+from support import get_angle_rad, get_angle_deg, get_distance, lerp2D
 
 
 # SET UP FOR PLATFORMER SINCE PLATFORMERS ARE HARDER TO CREATE A PLAYER FOR
@@ -48,8 +48,8 @@ class Player(pygame.sprite.Sprite):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
-            if i == 5:
-                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, True, body_points[i]))
+            if i == 5 or i == 0:
+                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
             else:
                 body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
             body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
@@ -197,12 +197,13 @@ class Body_Segment(pygame.sprite.Sprite):
 
         # legs
         self.has_legs = legs
-        # TODO define these parameters better (mainly for testing)
-        max_leg_length = 50
-        number_elbows = 1
-        target_angle = 40
-        step_interval = 80
-        self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval)]
+        if self.has_legs:
+            # TODO define these parameters better (mainly for testing)
+            max_leg_length = 100
+            number_elbows = 3
+            target_angle = 40
+            step_interval = 80
+            self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval)]
 
     # --- MOVEMENT ---
 
@@ -213,8 +214,10 @@ class Body_Segment(pygame.sprite.Sprite):
         return hyp
 
     def move(self, point, displacement):
-        angle = get_angle(self.pos, point)
-        angle += 90  # rotate the entire unit circle so + and - numbers are produced on the desired sides
+        angle = get_angle_deg(self.pos, point)
+        # ensures angle stays between 1st and 4th quadrants
+        while angle > 360:
+            angle -= 360
 
         # - Limit angle (limit segment joint's flex) -
         # relative_angle = the new angle - the neutral alignment from last frame before changing to face point
@@ -257,7 +260,7 @@ class Body_Segment(pygame.sprite.Sprite):
         for tile in tiles:
             distance = get_distance(self.pos, tile.hitbox.center)
             if distance - (tile.radius + self.radius) < 0:
-                angle = get_angle(self.pos, self.prev_pos)  # angle to move back towards where seg came from
+                angle = get_angle_rad(self.pos, self.prev_pos)  # angle to move back towards where seg came from
                 self.hitbox.centerx += math.sin(angle) * (tile.radius + self.radius - distance + 1)
                 self.hitbox.centery += math.cos(angle) * (tile.radius + self.radius - distance + 1)
 
@@ -378,9 +381,6 @@ class LegPair:
         self.rot = 0  # keeps track of leg rotation
         self.collision_tolerance = tile_size
 
-        # - elbows -
-        self.num_elbows = num_elbows  # number of leg segments (elbows to be found)
-
         # - leg -
         self.max_leg_length = max_leg_length  # informs length of leg segments
         self.step_interval = step_interval
@@ -388,6 +388,7 @@ class LegPair:
         # step_interval // 2 creates offset between the legs. Move offset for multiple pairs of legs per body seg
         self.step_timers = [self.step_interval // 2 + move_offset, move_offset]
         self.leg_thickness = leg_thickness
+        self.hip_flex = 80  # range of motion allowed between body segment and leg (annchor to foot)
 
         # - foot target -
         self.target_angle = target_angle
@@ -402,11 +403,21 @@ class LegPair:
                      [self.anchor[0], self.anchor[1]]]  # the leg's foot points [left, right]
         self.foot_move = [False, False]  # whether a foot should move or not [left, right]
 
-        # - elbow -
+        # - elbows -
+        # num_elbows + 2 allows one 'elbow' to be attached to anchor and one be attached to foot (see forward() and backward())
+        self.elbows = [[[self.anchor[0], self.anchor[1]] for i in range(num_elbows + 2)],
+                       [[self.anchor[0], self.anchor[1]] for i in range(num_elbows + 2)]]
+        # number of leg segments (elbows to be found)
+        # +1 to account for 0 elbow case (is not a problem because just iterates over anchor 'elbow' as 0th elbow)
+        self.num_elbows = num_elbows + 1
+        self.fabrik_tolerance = 1  # margin of error for fabrik (how close to foot nth elbow needs to be)
+        self.max_fabrik_iter = 17
 
         # - lerp-
         self.lerp_increment = 0.05  # value added to lerp per frame when required
         self.lerp = [0, 0]  # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) []left, right]
+
+    # --- COLLISIONS ---
 
     def collision_x(self, new_pos, prev_pos, tiles):
         # pos == prev pos but with x coordinate changed ready for collision testing
@@ -430,6 +441,8 @@ class LegPair:
         # if not inside tile, return x of new position
         return new_pos[1]
 
+    # --- CALCULATE POINTS ---
+
     def find_targets(self):
         left_angle = math.radians(self.rot + self.target_angle)
         right_angle = math.radians(self.rot - self.target_angle)
@@ -439,9 +452,8 @@ class LegPair:
         self.targets[1] = [self.anchor[0] + math.sin(right_angle) * self.max_leg_length,
                            self.anchor[1] + math.cos(right_angle) * self.max_leg_length]
 
-    def find_feet(self, pos, rot, distance, tiles):
-        self.anchor = pos
-        self.rot = rot
+    def find_feet(self, distance, tiles):
+        # increment timers based on displacement of body seg. Dynamic (based on speed of seg)
         self.step_timers[0] += distance
         self.step_timers[1] += distance
 
@@ -454,12 +466,18 @@ class LegPair:
             self.step_timers = [self.step_interval // 2, 0]  # resync legs to stagger and reset moving leg
             self.foot_move[1] = True
 
-        # check if leg is overextending, if so move feet
+        # check if leg is overextending, if so force move foot
         # independent of step timers. Will not mess with offset
         if get_distance(self.anchor, self.feet[0]) > self.max_leg_length:
             self.foot_move[0] = True
         if get_distance(self.anchor, self.feet[1]) > self.max_leg_length:
             self.foot_move[1] = True
+
+        # TODO check if hip is overflexing, if so move force move foot
+        '''if abs(get_angle(self.anchor, self.feet[0]) - self.rot) > self.hip_flex:
+            self.foot_move[0] = True
+        if abs(self.rot - get_angle(self.anchor, self.feet[1])) > self.hip_flex:
+            self.foot_move[1] = True'''
 
         # Lerps feet towards targets (always makes it in time no matter distance because % distance
         # is used) (end lerp if at 100%)
@@ -489,25 +507,100 @@ class LegPair:
                 self.foot_move[1] = False
                 self.lerp[1] = 0
 
-    # TODO optimise use of trig
+    # -- FABRIK --
+
+    # FABRIK algorithm (Forwards And Backwards Reaching Inverse Kinematic)
+    def find_elbows(self, elbows, foot):
+        segment_length = self.max_leg_length // self.num_elbows
+
+        # - if the foot is too far away, fully extend leg -
+        if get_distance(self.anchor, foot) >= self.max_leg_length:
+            angle_to_foot = get_angle_rad(self.anchor, foot)
+            # modifies every elbow in relation to anchor. Repositions towards foot
+            for i in range(len(elbows)):
+                # first elbow will be on anchor (0 segment lengths away)
+                elbows[i][0] = self.anchor[0] + math.sin(angle_to_foot) * segment_length * i
+                elbows[i][1] = self.anchor[1] + math.cos(angle_to_foot) * segment_length * i
+
+        else:
+            elbows = self.backwards(elbows, foot, segment_length)
+            elbows = self.forwards(elbows, segment_length)
+            # continue to loop until either we have, looped 10 times, or are within the tolerance distance
+            loop = 0
+            # 0 < loop forces one iteration (so 0th elbow syncs with anchor which may have moved)
+            while 0 < loop < self.max_fabrik_iter and get_distance(elbows[-1], foot) > self.fabrik_tolerance:
+                elbows = self.backwards(elbows, foot, segment_length)
+                elbows = self.forwards(elbows, segment_length)
+                loop += 1
+
+        return elbows
+
+    def forwards(self, elbows, segment_length):
+        # set start elbow to anchor position
+        elbows[0] = [self.anchor[0], self.anchor[1]]
+        prev_elbow = elbows[0]
+
+        # from 1 to n to exclude 0th elbow, since we have already positioned it
+        for i in range(1, len(elbows)):
+            angle = get_angle_rad(prev_elbow, elbows[i])
+            elbows[i] = [prev_elbow[0] + math.sin(angle) * segment_length,
+                         prev_elbow[1] + math.cos(angle) * segment_length]
+            prev_elbow = elbows[i]
+
+        return elbows
+
+    def backwards(self, elbows, foot, segment_length):
+        # set nth elbow to goal position
+        elbows[-1] = [foot[0], foot[1]]
+        prev_elbow = elbows[-1]
+
+        # len - 2 to exclude nth elbow, since we have already positioned it
+        # loop to -1 since range is noninclusive (want to loop to 0)
+        # TBH i don't fully understand how I came up with this. It just works.
+        for i in range(len(elbows) - 2, -1, -1):
+            angle = get_angle_rad(prev_elbow, elbows[i])
+            elbows[i] = [prev_elbow[0] + math.sin(angle) * segment_length,
+                         prev_elbow[1] + math.cos(angle) * segment_length]
+            prev_elbow = elbows[i]
+
+        return elbows
+
+    # --- UPDATE AND DRAW ---
+
     def update(self, pos, rot, distance, tiles):
+        self.anchor = pos
+        self.rot = rot
 
         self.find_targets()
-        self.find_feet(pos, rot, int(distance), tiles)  # cast distance to int for memory efficiency
+        self.find_feet(int(distance), tiles)  # cast distance to int for memory efficiency
+        self.elbows[0] = self.find_elbows(self.elbows[0], self.feet[0])
+        self.elbows[1] = self.find_elbows(self.elbows[1], self.feet[1])
 
-    # TODO optimise use of trig
     def draw(self):
         # ------------ FEET BALLS ---------------
         pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
         pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
 
         # TODO testing
-        pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
-        pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
+        #pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
+        #pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
 
-        # TODO testing 0 elbow
-        pygame.draw.line(self.surface, 'black', self.anchor, self.feet[0], self.leg_thickness)
-        pygame.draw.line(self.surface, 'black', self.anchor, self.feet[1], self.leg_thickness)
+        # ----------- ELBOWS -------------
+        prev_elbow = self.elbows[0][0]
+        pygame.draw.circle(self.surface, 'pink', prev_elbow, 2)
+        for i in range(1, len(self.elbows[0])):
+            elbow = self.elbows[0][i]
+            pygame.draw.line(self.surface, 'black', prev_elbow, elbow, self.leg_thickness)
+            pygame.draw.circle(self.surface, 'pink', elbow, 2)
+            prev_elbow = elbow
+
+        prev_elbow = self.elbows[1][0]
+        pygame.draw.circle(self.surface, 'pink', prev_elbow, 2)
+        for i in range(1, len(self.elbows[1])):
+            elbow = self.elbows[1][i]
+            pygame.draw.line(self.surface, 'black', prev_elbow, elbow, self.leg_thickness)
+            pygame.draw.circle(self.surface, 'pink', elbow, 2)
+            prev_elbow = elbow
 
 
 # -- BRAIN --
@@ -638,6 +731,7 @@ class Brain:
         # if path is empty or the final point (the target) != to the current target, recalculate path
         if len(self.path) == 0 or self.path[-1] != self.target:
             self.path = self.pathfind(self.target, tiles)
+
 
 class PathNode:
     def __init__(self, pos, g_cost, start, target, parent=None):

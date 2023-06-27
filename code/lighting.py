@@ -1,7 +1,7 @@
 import pygame
 from math import sin
 from random import randint
-from support import circle_surf, pos_for_center, get_rect_corners, get_angle, get_distance
+from support import circle_surf, pos_for_center, get_rect_corners, get_angle_rad, get_distance
 
 
 class Light:
