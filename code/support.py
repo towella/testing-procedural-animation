@@ -3,7 +3,7 @@ from csv import reader
 from game_data import tile_size
 
 
-# -- IMPORT FUNCTIONS --
+# ------------------ IMPORT FUNCTIONS ------------------
 
 # allows paths to be used for both normal running in PyCharm and as an .exe
 def resource_path(relative_path):
@@ -83,7 +83,7 @@ def import_cut_graphics(path, art_tile_size):
     return cut_tiles
 
 
-# -- PROCEDURAL GRAPHICS --
+# ------------------ PROCEDURAL GRAPHICS ------------------
 
 def swap_colour(img, old_c, new_c):
     img.set_colorkey(old_c)
@@ -125,7 +125,7 @@ def circle_surf(radius, colour):
     return surf
 
 
-# -- UTILITIES --
+# ------------------ UTILITIES ------------------
 
 # uses distance between points to lerp based on time between 0 and 1 (acts as % travelled)
 # returns updated val1 position

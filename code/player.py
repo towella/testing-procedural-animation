@@ -34,7 +34,6 @@ class Player(pygame.sprite.Sprite):
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
         self.vertical_corner_correction_boost = 4
 
-
         # - Brain -
         self.brain = Brain(self.head, self.surface)
 
@@ -58,6 +57,8 @@ class Player(pygame.sprite.Sprite):
         return body_points
 
 # -- checks --
+
+    # - input -
 
     def get_input(self, dt, tiles):
         keys = pygame.key.get_pressed()
@@ -162,7 +163,9 @@ class Player(pygame.sprite.Sprite):
             light.draw()
 
 
-# -- BODY --
+# --------- BODY ---------
+
+# --- body segments ---
 
 class Body_Segment(pygame.sprite.Sprite):
     def __init__(self, surface, spawn, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
@@ -201,9 +204,12 @@ class Body_Segment(pygame.sprite.Sprite):
             # TODO define these parameters better (mainly for testing)
             max_leg_length = 100
             number_elbows = 3
-            target_angle = 40
-            step_interval = 80
-            self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval)]
+            target_angle = 30
+            step_interval = 150
+            leg_thickness = 3
+            seg_lengths = [15, 60, 25, 5]
+            self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval,
+                                 0, leg_thickness, seg_lengths)]
 
     # --- MOVEMENT ---
 
@@ -374,25 +380,33 @@ class Body_Segment(pygame.sprite.Sprite):
 
 
 class LegPair:
-    def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle, step_interval, move_offset=0, leg_thickness=3):
+    def __init__(self, surface, anchor, num_elbows, max_leg_length, target_angle, step_interval, move_offset=0,
+                 leg_thickness=3, segment_lengths=[]):
+        # TODO merge max_leg_length and segment_lengths into one variable?
         # - general -
         self.surface = surface
         self.anchor = anchor  # where the leg is joined to the parent object
-        self.rot = 0  # keeps track of leg rotation
+        self.rot = 0  # keeps track of rotation
         self.collision_tolerance = tile_size
 
         # - leg -
-        self.max_leg_length = max_leg_length  # informs length of leg segments
+        # define max leg length based on segment lengths or default
+        # default
+        if len(segment_lengths) == 0:
+            self.max_leg_length = max_leg_length  # informs length of leg segments
+        # custom
+        else:
+            self.max_leg_length = 0
+            for i in segment_lengths:
+                self.max_leg_length += i
         self.step_interval = step_interval
         # tracks movement of body compared to feet to determine when to move feet [left, right]
         # step_interval // 2 creates offset between the legs. Move offset for multiple pairs of legs per body seg
         self.step_timers = [self.step_interval // 2 + move_offset, move_offset]
-        self.leg_thickness = leg_thickness
         self.hip_flex = 80  # range of motion allowed between body segment and leg (annchor to foot)
 
         # - foot target -
         self.target_angle = target_angle
-
         # targets points the feet move to [left, right]
         self.targets = [[self.anchor[0], self.anchor[1]],
                         [self.anchor[0], self.anchor[1]]]
@@ -402,20 +416,13 @@ class LegPair:
         self.feet = [[self.anchor[0], self.anchor[1]],
                      [self.anchor[0], self.anchor[1]]]  # the leg's foot points [left, right]
         self.foot_move = [False, False]  # whether a foot should move or not [left, right]
-
-        # - elbows -
-        # num_elbows + 2 allows one 'elbow' to be attached to anchor and one be attached to foot (see forward() and backward())
-        self.elbows = [[[self.anchor[0], self.anchor[1]] for i in range(num_elbows + 2)],
-                       [[self.anchor[0], self.anchor[1]] for i in range(num_elbows + 2)]]
-        # number of leg segments (elbows to be found)
-        # +1 to account for 0 elbow case (is not a problem because just iterates over anchor 'elbow' as 0th elbow)
-        self.num_elbows = num_elbows + 1
-        self.fabrik_tolerance = 1  # margin of error for fabrik (how close to foot nth elbow needs to be)
-        self.max_fabrik_iter = 17
-
-        # - lerp-
         self.lerp_increment = 0.05  # value added to lerp per frame when required
-        self.lerp = [0, 0]  # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) []left, right]
+        # tracks lerp value of feet when moving (between 0 and 1, representing a percentage of movement) [left, right]
+        self.lerp = [0, 0]
+
+        # - legs -
+        self.legs = [Appendage(self.surface, self.anchor, self.max_leg_length, leg_thickness, num_elbows, segment_lengths),
+                     Appendage(self.surface, self.anchor, self.max_leg_length, leg_thickness, num_elbows, segment_lengths)]
 
     # --- COLLISIONS ---
 
@@ -507,64 +514,6 @@ class LegPair:
                 self.foot_move[1] = False
                 self.lerp[1] = 0
 
-    # -- FABRIK --
-
-    # FABRIK algorithm (Forwards And Backwards Reaching Inverse Kinematic)
-    def find_elbows(self, elbows, foot):
-        segment_length = self.max_leg_length // self.num_elbows
-
-        # - if the foot is too far away, fully extend leg -
-        if get_distance(self.anchor, foot) >= self.max_leg_length:
-            angle_to_foot = get_angle_rad(self.anchor, foot)
-            # modifies every elbow in relation to anchor. Repositions towards foot
-            for i in range(len(elbows)):
-                # first elbow will be on anchor (0 segment lengths away)
-                elbows[i][0] = self.anchor[0] + math.sin(angle_to_foot) * segment_length * i
-                elbows[i][1] = self.anchor[1] + math.cos(angle_to_foot) * segment_length * i
-
-        else:
-            elbows = self.backwards(elbows, foot, segment_length)
-            elbows = self.forwards(elbows, segment_length)
-            # continue to loop until either we have, looped 10 times, or are within the tolerance distance
-            loop = 0
-            # 0 < loop forces one iteration (so 0th elbow syncs with anchor which may have moved)
-            while 0 < loop < self.max_fabrik_iter and get_distance(elbows[-1], foot) > self.fabrik_tolerance:
-                elbows = self.backwards(elbows, foot, segment_length)
-                elbows = self.forwards(elbows, segment_length)
-                loop += 1
-
-        return elbows
-
-    def forwards(self, elbows, segment_length):
-        # set start elbow to anchor position
-        elbows[0] = [self.anchor[0], self.anchor[1]]
-        prev_elbow = elbows[0]
-
-        # from 1 to n to exclude 0th elbow, since we have already positioned it
-        for i in range(1, len(elbows)):
-            angle = get_angle_rad(prev_elbow, elbows[i])
-            elbows[i] = [prev_elbow[0] + math.sin(angle) * segment_length,
-                         prev_elbow[1] + math.cos(angle) * segment_length]
-            prev_elbow = elbows[i]
-
-        return elbows
-
-    def backwards(self, elbows, foot, segment_length):
-        # set nth elbow to goal position
-        elbows[-1] = [foot[0], foot[1]]
-        prev_elbow = elbows[-1]
-
-        # len - 2 to exclude nth elbow, since we have already positioned it
-        # loop to -1 since range is noninclusive (want to loop to 0)
-        # TBH i don't fully understand how I came up with this. It just works.
-        for i in range(len(elbows) - 2, -1, -1):
-            angle = get_angle_rad(prev_elbow, elbows[i])
-            elbows[i] = [prev_elbow[0] + math.sin(angle) * segment_length,
-                         prev_elbow[1] + math.cos(angle) * segment_length]
-            prev_elbow = elbows[i]
-
-        return elbows
-
     # --- UPDATE AND DRAW ---
 
     def update(self, pos, rot, distance, tiles):
@@ -573,8 +522,9 @@ class LegPair:
 
         self.find_targets()
         self.find_feet(int(distance), tiles)  # cast distance to int for memory efficiency
-        self.elbows[0] = self.find_elbows(self.elbows[0], self.feet[0])
-        self.elbows[1] = self.find_elbows(self.elbows[1], self.feet[1])
+        # update legs, passing in feet as targets
+        for i in range(len(self.legs)):
+            self.legs[i].update(self.anchor, self.feet[i])
 
     def draw(self):
         # ------------ FEET BALLS ---------------
@@ -585,25 +535,170 @@ class LegPair:
         #pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
         #pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
 
-        # ----------- ELBOWS -------------
-        prev_elbow = self.elbows[0][0]
-        pygame.draw.circle(self.surface, 'pink', prev_elbow, 2)
-        for i in range(1, len(self.elbows[0])):
-            elbow = self.elbows[0][i]
-            pygame.draw.line(self.surface, 'black', prev_elbow, elbow, self.leg_thickness)
-            pygame.draw.circle(self.surface, 'pink', elbow, 2)
-            prev_elbow = elbow
-
-        prev_elbow = self.elbows[1][0]
-        pygame.draw.circle(self.surface, 'pink', prev_elbow, 2)
-        for i in range(1, len(self.elbows[1])):
-            elbow = self.elbows[1][i]
-            pygame.draw.line(self.surface, 'black', prev_elbow, elbow, self.leg_thickness)
-            pygame.draw.circle(self.surface, 'pink', elbow, 2)
-            prev_elbow = elbow
+        # ----------- LEG SEGMENTS -------------
+        for leg in self.legs:
+            leg.draw()
 
 
-# -- BRAIN --
+class Appendage:
+    def __init__(self, surface, anchor, max_length, line_weight=3, num_joints=1, segment_lengths=[]):
+        # -- general --
+        self.surface = surface
+        self.anchor = anchor  # base point appendage is connected to
+        self.target = anchor  # point the appendage is aiming to touch
+
+        # -- joints --
+        # number of leg segments (joints to be solved for)
+        # +1 to account for 0 elbow case (is not a problem because just iterates over anchor 'elbow' as 0th elbow)
+        self.num_joints = num_joints + 1
+        # num_elbows + 2 allows one 'joint' to be attached to anchor and one be attached to target (see forward() and backward())
+        self.joints = [[self.anchor[0], self.anchor[1]] for i in range(num_joints + 2)]
+
+        # -- segments --
+        self.seg_lengths = segment_lengths  # custom leg segment lengths
+
+        # if specific lengths are passed in, base max length on their sum as long as len(segment_lengths) + 1 == num_joints
+        # A -- o -- o -- o -- E   i.e. 3 joints = 4 lengths
+        # default
+        if len(segment_lengths) == 0:
+            self.custom_lengths = False  # whether segment_lengths has been specified or not
+            self.max_length = max_length  # maximum length of appendage
+
+        # error exception
+        elif len(segment_lengths) - 1 != num_joints:
+            raise Exception("Appendage error: Number of passed segment lengths must be one greater than number of joints.")
+
+        # custom
+        else:
+            self.custom_lengths = True
+            self.max_length = 0
+            for length in segment_lengths:
+                self.max_length += length
+        self.seg_length = self.max_length // self.num_joints  # distance between two joints. Used if segment_lengths is empty
+
+        # -- FABRIK --
+        self.tolerance = 1  # maximum pixel distance tolerance between end effector and target
+        self.max_iter = 17  # maximum number of iterations before IK terminates (to prevent hang)
+
+        # -- cosmetic --
+        self.line_weight = line_weight
+
+    # --- COLLISIONS ---
+
+    def collision_x(self, new_pos, prev_pos, tiles):
+        # pos == prev pos but with x coordinate changed ready for collision testing
+        pos = [new_pos[0], prev_pos[1]]
+        # -- X Collisions --
+        for tile in tiles:
+            if tile.hitbox.collidepoint(pos):
+                # if inside tile, return x of prev position (ASSUMES DOESNT START IN TILE)
+                return prev_pos[0]
+        # if not inside tile, return x of new position
+        return new_pos[0]
+
+    def collision_y(self, new_pos, prev_pos, tiles):
+        # pos == prev pos but with x coordinate changed ready for collision testing
+        pos = [prev_pos[0], new_pos[1]]
+        # -- X Collisions --
+        for tile in tiles:
+            if tile.hitbox.collidepoint(pos):
+                # if inside tile, return x of prev position (ASSUMES DOESNT START IN TILE)
+                return prev_pos[1]
+        # if not inside tile, return x of new position
+        return new_pos[1]
+
+    # -- FABRIK --
+
+    # FABRIK algorithm (Forwards And Backwards Reaching Inverse Kinematic)
+    def solve_joints(self):
+        # - if the target is too far away, fully extend appendage -
+        if get_distance(self.anchor, self.target) >= self.max_length:
+            target_angle = get_angle_rad(self.anchor, self.target)
+            # modifies every elbow in relation to anchor. Repositions towards target
+            length = 0
+            # skips 0th joint which should be on anchor
+            for i in range(1, len(self.joints)):
+                # increment length
+                if self.custom_lengths:
+                    # cumulatively sum lengths for each joint
+                    # joint 1 corresponds to length 0 .: i - 1
+                    length += self.seg_lengths[i - 1]
+                else:
+                    length += self.seg_length
+
+                self.joints[i] = [self.anchor[0] + math.sin(target_angle) * length,
+                                  self.anchor[1] + math.cos(target_angle) * length]
+
+        else:
+            self.backwards()
+            self.forwards()
+            # continue to loop until either we have, looped 10 times, or are within the tolerance distance
+            loop = 0
+            # 0 < loop forces one iteration (so 0th elbow syncs with anchor which may have moved)
+            while 0 < loop < self.max_iter and get_distance(self.joints[-1], self.target) > self.tolerance:
+                self.backwards()
+                self.forwards()
+                loop += 1
+
+    def forwards(self):
+        # set start elbow to anchor position
+        self.joints[0] = [self.anchor[0], self.anchor[1]]
+
+        # from 1 to n to exclude 0th elbow, since we have already positioned it
+        for i in range(1, len(self.joints)):
+            # get length
+            if self.custom_lengths:
+                # get corresponding length from custom segment lengths. Joint 1 corresponds to length 0 .: i - 1
+                length = self.seg_lengths[i - 1]
+            else:
+                # otherwise use default length
+                length = self.seg_length
+
+            # update joint
+            prev_joint = self.joints[i - 1]
+            angle = get_angle_rad(prev_joint, self.joints[i])
+            self.joints[i] = [prev_joint[0] + math.sin(angle) * length,
+                              prev_joint[1] + math.cos(angle) * length]
+
+    def backwards(self):
+        # set nth elbow to goal position
+        self.joints[-1] = [self.target[0], self.target[1]]
+        prev_joint = self.joints[-1]
+
+        # len - 2 to exclude nth elbow, since we have already positioned it
+        # loop to -1 since range is noninclusive (want to loop to 0)
+        # TBH i don't fully understand how I came up with this. It just works.
+        for i in range(len(self.joints) - 2, -1, -1):
+            # get length
+            if self.custom_lengths:
+                # get corresponding length from custom segment lengths. Joint 1 corresponds to length 0 .: i - 1
+                length = self.seg_lengths[i - 1]
+            else:
+                # otherwise use default length
+                length = self.seg_length
+
+            # update joint
+            angle = get_angle_rad(prev_joint, self.joints[i])
+            self.joints[i] = [prev_joint[0] + math.sin(angle) * length,
+                              prev_joint[1] + math.cos(angle) * length]
+            prev_joint = self.joints[i]
+
+    # -- update and draw --
+
+    def update(self, anchor, target):
+        self.anchor = anchor
+        self.target = target
+        self.solve_joints()
+
+    def draw(self):
+        # skip anchor joint
+        for i in range(1, len(self.joints)):
+            joint = self.joints[i]
+            pygame.draw.line(self.surface, 'black', self.joints[i - 1], joint, self.line_weight)
+            pygame.draw.circle(self.surface, 'pink', joint, 2)
+
+
+# --------- BRAIN ---------
 
 class Brain:
     def __init__(self, head_segment, surface):
