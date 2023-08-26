@@ -117,7 +117,7 @@ def game():
 
         # -- Update --
         screen.fill((48, 99, 142))  # fill background with colour
-        level.update(mouse_pos, dt)  # runs level processes
+        level.update(dt)  # runs level processes
 
         font.render(f'FPS: {str(clock.get_fps())}', screen, (0, 0))  # TODO Debugging only, remove
 

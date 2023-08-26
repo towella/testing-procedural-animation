@@ -165,7 +165,7 @@ class Player(pygame.sprite.Sprite):
         self.rect.y -= int(scroll_value[0])
         self.sync_hitbox()
 
-    def update(self, tiles, dt, mouse_pos): #, scroll_value, current_spawn):
+    def update(self, tiles, dt): #, scroll_value, current_spawn):
 
         # respawns player if respawn has been evoked
         #if self.respawn:
@@ -176,7 +176,7 @@ class Player(pygame.sprite.Sprite):
 
         # -- CHECKS/UPDATE --
         # - update brain -
-        self.brain.update(tiles, mouse_pos)
+        self.brain.update(tiles)
         target = self.brain.get_target()
         head_pos = self.head.get_pos()
         angle = get_angle_rad(head_pos, target)
@@ -724,6 +724,10 @@ class Brain:
 
         run = True
         while run:
+            # if open is empty, indicates no possible path can be found. Generate new target
+            if not open.keys():
+                return []
+
             # find node with lowest f cost in open
             current_node = open[list(open.keys())[0]]
             for node in open.keys():
@@ -777,30 +781,17 @@ class Brain:
 
         return path
 
-    def find_target(self, tiles, mouse_pos):
-        # TODO testing, if mouse has clicked, change target
-        if pygame.mouse.get_pressed(3)[0]:
-            in_tile = False
+    def find_target(self, tiles):
+        self.target = (randint(0, screen_width), randint(0, screen_height))
+        # continue to randomly generate point until point not in a tile
+        repeat = True
+        while repeat:
+            repeat = False  # assume no repeat required until proven neccessary
             for tile in tiles:
-                if tile.hitbox.collidepoint(mouse_pos):
-                    in_tile = True
+                if tile.hitbox.collidepoint(self.target):
+                    self.target = (randint(0, screen_width), randint(0, screen_height))
+                    repeat = True  # point has been re-randomized and needs to be tested again
                     break
-            if not in_tile:
-                self.target = mouse_pos
-
-        # if target has been collected generate a new one
-        if self.head.hitbox.collidepoint(self.target):
-            self.target = (randint(0, screen_width), randint(0, screen_height))
-
-            # continue to randomly generate point until point not in a tile
-            repeat = True
-            while repeat:
-                for tile in tiles:
-                    if tile.hitbox.collidepoint(self.target):
-                        self.target = (randint(0, screen_width), randint(0, screen_height))
-                        repeat = True  # point has been re-randomized and needs to be tested again
-                        break
-                    repeat = False  # point has not yet failed testing
 
     # -- getters and setters --
     # returns next point in the path to the real final target
@@ -808,16 +799,22 @@ class Brain:
         return self.path[0]
 
     # -- update --
-    def update(self, tiles, mouse_pos):
-        # find target (if target needs to be found)
-        self.find_target(tiles, mouse_pos)
+    def update(self, tiles):
+        # find target, if target has been collected
+        if self.head.hitbox.collidepoint(self.target):
+            self.find_target(tiles)
 
         # create or modify path to target
         if self.head.hitbox.collidepoint(self.path[0]):
             self.path = self.path[1:]
+
         # if path is empty or the final point (the target) != to the current target, recalculate path
         if len(self.path) == 0 or self.path[-1] != self.target:
             self.path = self.pathfind(self.target, tiles)
+            # if no path can be found, will return empty path. Gen new target and path
+            while not self.path:
+                self.find_target(tiles)
+                self.path = self.pathfind(self.target, tiles)
 
 
 class PathNode:

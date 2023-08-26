@@ -21,7 +21,6 @@ o Make pathfinding work with:
     - collisions (use circle colliders?)
     - joint restriction
 o Optimise pathfinding
-o Fix hanging bug in pathfinding
 
 --------------------------------------------------------------------
 o Procedurally generated terrain (dungeon terminal game)
