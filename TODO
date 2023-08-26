@@ -5,14 +5,14 @@ o Add torque to body segments
 
 -------
 o Restrict hip joint (legpair, if angle between seg rot and anchor to foot > set angle, force step)
+o Fix leg double stepping
 o FABRIK
     - Add support for inverted insect esque legs
     - Add restrictions to elbows
-
     - Problems with IK with custom leg segment lengths
 -------
 
-o Improve collisions
+o Fix collisions
     - feet
     - elbow
     - body segment
@@ -24,6 +24,6 @@ o Optimise pathfinding
 o Fix hanging bug in pathfinding
 
 --------------------------------------------------------------------
-o Sprite stacking
-o Procedurally generated terrain
-o Raycast 3D projection
+o Procedurally generated terrain (dungeon terminal game)
+o Sprite stacking projection
+o rotation around head

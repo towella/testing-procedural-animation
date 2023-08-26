@@ -1,7 +1,6 @@
 import pygame, math
 from random import randint
 from game_data import tile_size, controller_map, screen_width, screen_height
-from lighting import Light
 from support import get_angle_rad, get_angle_deg, get_distance, lerp2D
 
 
@@ -16,23 +15,20 @@ class Player(pygame.sprite.Sprite):
         # -- player setup --
         # - Body -
         self.seg_spacing = segment_spacing
-        self.max_seg_speed = 3
-        self.max_flex = 30
+        self.speed = 3
+        self.max_flex = 50
         self.segments = self.create_body(spawn, segments, segment_spacing)
         self.head = self.segments[0]
-
-        self.light_distance = 40
-        self.lights = [Light(self.surface, self.head.pos, (10, 10, 10), False, 40, 30, 0.02),
-                       Light(self.surface, self.head.pos, (20, 20, 20), False, 25, 20, 0.02)]
+        self.max_length = 0
+        for seg in self.segments:
+            self.max_length += seg.radius * 2
 
         self.respawn = False
 
         # -- player movement --
-        self.direction = pygame.math.Vector2(0, 0)  # allows cleaner movement by storing both x and y direction
         # collisions -- provides a buffer allowing late collision
         self.collision_tolerance = tile_size
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
-        self.vertical_corner_correction_boost = 4
 
         # - Brain -
         self.brain = Brain(self.head, self.surface)
@@ -41,16 +37,16 @@ class Player(pygame.sprite.Sprite):
 
     # initialises the body
     def create_body(self, spawn, segments, segment_spacing):
-        body_points = [Body_Segment(self.surface, spawn, self.seg_spacing, self.max_flex, self.max_seg_speed, True)]
+        body_points = [BodySegment(self.surface, spawn, segment_spacing, False)]
 
         for i in range(segments - 1):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
             if i == 5 or i == 0:
-                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
+                body_points.append(BodySegment(self.surface, spawn, segment_spacing, True, body_points[i]))
             else:
-                body_points.append(Body_Segment(self.surface, spawn, segment_spacing, self.max_flex, self.max_seg_speed, False, body_points[i]))
+                body_points.append(BodySegment(self.surface, spawn, segment_spacing, False, body_points[i]))
             body_points[i].set_child(body_points[i + 1])  # max i is length of points - 1 (head is added before loop)
             # therefore child of last point (i) is i + 1
 
@@ -105,7 +101,6 @@ class Player(pygame.sprite.Sprite):
     def player_respawn(self, spawn):
         self.rect.x, self.rect.y = spawn.x, spawn.y  # set position to respawn point
         self.sync_hitbox()
-        self.direction = pygame.math.Vector2(0, 0)  # reset movement
         self.respawn = False
 
 # -- getters and setters --
@@ -116,6 +111,54 @@ class Player(pygame.sprite.Sprite):
         return self.head
 
 # -- update methods --
+
+    # towards anchor
+    def fabrik_forwards(self, target):
+        # set start elbow to anchor position
+        self.segments[0].set_pos([target[0], target[1]])
+
+        # from 1 to n to exclude 0th elbow, since we have already positioned it
+        for i in range(1, len(self.segments)):
+            # spacing = combined radius of this segment and it's parent
+            spacing = self.segments[i].get_radius() + self.segments[i].get_parent().get_radius()
+
+            # update joint
+            prev_seg_pos = self.segments[i - 1].get_pos()
+            angle = get_angle_rad(prev_seg_pos, self.segments[i].get_pos())
+
+            '''# + 180 to get the angle in the direction of the child rather than parent segment
+            if not self.segments[i - 1].head:
+                prev_seg_rot = get_angle_deg(self.segments[i - 2].get_pos(), self.segments[i - 1].get_pos())
+            else:
+                prev_seg_rot = math.degrees(self.segments[i - 1].get_rot()) + 180
+            if abs(prev_seg_rot - angle) > self.max_flex:
+                if angle > prev_seg_rot:
+                    angle = prev_seg_rot + self.max_flex
+                elif angle < prev_seg_rot:
+                    angle = prev_seg_rot - self.max_flex'''
+
+            self.segments[i].set_pos([prev_seg_pos[0] + math.sin(angle) * spacing,
+                                      prev_seg_pos[1] + math.cos(angle) * spacing])
+
+    # FABRIK algorithm (Forwards And Backwards Reaching Inverse Kinematic)
+    def solve_body(self, target):
+        # anchor is end of tail
+        anchor = self.segments[-1].get_pos()
+        # head is end effector
+
+        # - if the target is too far away, fully extend appendage -
+        if get_distance(anchor, target) >= self.max_length:
+            target_angle = get_angle_rad(anchor, target)
+            # modifies every elbow in relation to anchor. Repositions towards target
+            length = 0
+            # skips 0th joint which should be on anchor
+            for i in range(1, len(self.segments)):
+                length += self.segments[i].radius * 2
+                self.segments[i] = [anchor[0] + math.sin(target_angle) * length,
+                                    anchor[1] + math.cos(target_angle) * length]
+
+        else:
+            self.fabrik_forwards(target)
 
     def apply_scroll(self, scroll_value):
         self.rect.x -= int(scroll_value[1])
@@ -133,59 +176,53 @@ class Player(pygame.sprite.Sprite):
 
         # -- CHECKS/UPDATE --
         # - update brain -
-        # TODO move to brain update
         self.brain.update(tiles, mouse_pos)
         target = self.brain.get_target()
-
+        head_pos = self.head.get_pos()
+        angle = get_angle_rad(head_pos, target)
+        target = [head_pos[0] + math.sin(angle) * self.speed,
+                  head_pos[1] + math.cos(angle) * self.speed]
 
         # - update body -
+        self.solve_body(target)
         for i in range(len(self.segments)):
             # if not a head don't pass mouse cursor (point is based on parent seg)
             if i > 0:
                 self.segments[i].update(tiles)
-            # if head pass player target as point to move towards
+            # if head seg, pass angle from head to target before head was moved to target
             else:
-                self.segments[i].update(tiles, target)
+                self.segments[i].update(tiles, angle)
 
         # scroll shouldn't have collision applied, it is separate movement
         #self.apply_scroll(scroll_value)
-
-        # light (after movement and scroll so pos is accurate)
-        for light in self.lights:
-            light.update(dt, self.head.get_pos(), None)
 
 # -- visual methods --
 
     def draw(self):
         for segment in self.segments:
             segment.draw()
-        for light in self.lights:
-            light.draw()
 
 
 # --------- BODY ---------
 
 # --- body segments ---
 
-class Body_Segment(pygame.sprite.Sprite):
-    def __init__(self, surface, spawn, segment_spacing, max_flex, max_move_speed, legs, parent_body_segment=None):
+class BodySegment(pygame.sprite.Sprite):
+    def __init__(self, surface, spawn, segment_spacing, legs, parent_body_segment=None):
         super().__init__()
 
         self.surface = surface  # segment render surface
         self.pos = [spawn.x, spawn.y]  # segment position
         self.prev_pos = self.pos
-        self.move_speed = max_move_speed  # for head only
-        self.direction = pygame.Vector2(0, 0)  # tracks segment movement
-        self.rot = 0  # keeps track of segment rotation
+        self.rot = 0  # keeps track of segment rotation in RADIANS for legs
+        self.direction = pygame.Vector2()
 
         # parent/child
         self.parent_seg = parent_body_segment
         self.child_seg = None
 
         # segment values
-        self.seg_spacing = segment_spacing
-        self.max_flex = max_flex
-        self.radius = self.seg_spacing // 2  # collisions and drawn circle
+        self.radius = segment_spacing // 2  # collisions and drawn circle
         if self.parent_seg is None:
             self.head = True
         else:
@@ -207,58 +244,9 @@ class Body_Segment(pygame.sprite.Sprite):
             target_angle = 30
             step_interval = 150
             leg_thickness = 3
-            seg_lengths = [15, 60, 25, 5]
+            seg_lengths = []  # [15, 60, 25, 5]
             self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval,
                                  0, leg_thickness, seg_lengths)]
-
-    # --- MOVEMENT ---
-
-    def adjusted_distance(self, point):
-        # work out how far P1 needs to move towards P2 (target) while still being spaced appropriately
-        hyp = get_distance(self.pos, point)
-        hyp -= self.seg_spacing
-        return hyp
-
-    def move(self, point, displacement):
-        angle = get_angle_deg(self.pos, point)
-        # ensures angle stays between 1st and 4th quadrants
-        while angle > 360:
-            angle -= 360
-
-        # - Limit angle (limit segment joint's flex) -
-        # relative_angle = the new angle - the neutral alignment from last frame before changing to face point
-        '''if self.head:
-            child_rot = self.child_seg.get_rot()
-            relative_angle = angle - child_rot
-            # relative angle should always be less than 180
-            if relative_angle > 180:
-                relative_angle = -(180 - (relative_angle - 180))
-            elif relative_angle < -180:
-                relative_angle = 180 + (relative_angle + 180)
-            # TODO head and other segs are all the same now?? no parents required anymore!
-            #else:
-                #prev_point = self.parent_seg.get_prev_pos()  # get parent position before movement
-                #prev_alignment = get_angle(self.pos, prev_point)  # get neutral alignment angle from before parent moved
-                #relative_angle = angle - prev_alignment  # 'displacement' angle from neutral. + or - indicates > or < neutral
-            # limit rotation
-            if abs(relative_angle) > self.max_flex:
-                if relative_angle > 0:
-                    angle = child_rot + self.max_flex
-                elif relative_angle < 0:
-                    angle = child_rot - self.max_flex'''
-
-        # - update and adjust angles -
-        self.rot = angle  # update segment rotation
-        angle = math.radians(angle)  # convert to radians for trig funcs
-
-        # - Move point -
-        # get how much the x and y should be changed by (so the total displacement is always constant)
-        if self.head and displacement > self.move_speed:  # limit movement displacement towards target for head
-            displacement = self.move_speed
-
-        # calculate how much the individual x and y coord should be modified for a total displacement in given direction
-        self.direction.x += math.sin(angle) * displacement
-        self.direction.y += math.cos(angle) * displacement
 
     # --- COLLISIONS ---
 
@@ -309,8 +297,18 @@ class Body_Segment(pygame.sprite.Sprite):
     def get_child(self):
         return self.child_seg
 
+    def get_parent(self):
+        return self.parent_seg
+
     def get_rot(self):
         return self.rot
+
+    def get_radius(self):
+        return self.radius
+
+    def set_pos(self, pos):
+        self.pos = [pos[0], pos[1]]
+        self.sync_hitbox()
 
     def set_child(self, seg_obj):
         self.child_seg = seg_obj
@@ -321,25 +319,17 @@ class Body_Segment(pygame.sprite.Sprite):
         self.hitbox.center = self.pos
         self.rect = self.hitbox
 
-    def update(self, tiles, point=(0, 0)):
-        # reset direction vector
-        self.direction.x = 0
-        self.direction.y = 0
-
+    def update(self, tiles, angle=0.0):
+        # -- update rotations of segments --
+        # non-head seg rot based on parent
         if not self.head:
-            point = self.parent_seg.get_prev_pos()
-        self.prev_pos = self.pos
-
-        # moves towards target point
-        # if head, move without adjusting distance to point
-        if self.head:
-            hyp = get_distance(self.pos, point)
-        # if normal body segment, move towards parent body segment accounting for segment spacing.
+            self.rot = get_angle_rad(self.pos, self.parent_seg.get_pos())
+        # head seg rot based on passed angle
         else:
-            hyp = self.adjusted_distance(point)
-        self.move(point, hyp)
+            self.rot = angle
 
-        # update position and collision detection
+        # -- update position and collision detection --
+        # TODO fix collisions with new follow the leader
         # X
         self.pos[0] += self.direction.x
         self.sync_hitbox()  # sync hitbox after pos has been moved ready for collision detection
@@ -349,13 +339,15 @@ class Body_Segment(pygame.sprite.Sprite):
         self.sync_hitbox()  # sync hitbox after pos has been moved ready for collision detection
         self.collision_y(tiles)  # y collisions after y movement (separate to x movement)
 
-        # TODO self.collision(tiles)
+        # TODO self.collision(tiles)  <-- radial collisions
 
         # -- update legs --
-        distance = math.sqrt(self.direction.x ** 2 + self.direction.y ** 2)
+        distance = get_distance(self.pos, self.prev_pos)
         if self.has_legs:
             for leg in self.legs:
                 leg.update(self.pos, self.rot, distance, tiles)
+
+        self.prev_pos = self.pos  # store current pos in prev_pos ready for next frame
 
     def draw(self):
         # -- feet --
@@ -373,8 +365,8 @@ class Body_Segment(pygame.sprite.Sprite):
         #pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
 
         # TODO TESTING self.rot
-        x = math.sin(math.radians(self.rot)) * 12
-        y = math.cos(math.radians(self.rot)) * 12
+        x = math.sin(self.rot) * 12
+        y = math.cos(self.rot) * 12
         epos = (self.pos[0] + x, self.pos[1] + y)
         pygame.draw.line(self.surface, 'red', self.pos, epos, 1)
 
@@ -451,8 +443,8 @@ class LegPair:
     # --- CALCULATE POINTS ---
 
     def find_targets(self):
-        left_angle = math.radians(self.rot + self.target_angle)
-        right_angle = math.radians(self.rot - self.target_angle)
+        left_angle = self.rot + math.radians(self.target_angle)
+        right_angle = self.rot - math.radians(self.target_angle)
 
         self.targets[0] = [self.anchor[0] + math.sin(left_angle) * self.max_leg_length,
                            self.anchor[1] + math.cos(left_angle) * self.max_leg_length]

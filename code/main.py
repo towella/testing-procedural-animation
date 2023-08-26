@@ -93,7 +93,7 @@ def game():
                 elif event.key == pygame.K_x:
                     global game_speed
                     if game_speed == 60:
-                        game_speed = 20
+                        game_speed = 5
                     else:
                         game_speed = 60
                 elif event.key == pygame.K_f:
