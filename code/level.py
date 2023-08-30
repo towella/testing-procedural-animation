@@ -35,6 +35,9 @@ class Level:
         self.pause = False
         self.pause_pressed = False
 
+        self.rot_value = 0  # ∆ rotation in deg
+        self.rot_rate = 3  # in deg
+
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
         # - get level data -
@@ -42,17 +45,17 @@ class Level:
         self.all_tile_sprites = pygame.sprite.Group()  # contains all tile sprites for ease of updating/scrolling
         self.all_object_sprites = pygame.sprite.Group()
 
-        # get decoration layers
-        '''self.background_layers = []  # ordered list of all background layers (in render order)
+        # get background and foreground layers
+        self.background_layers = []  # ordered list of all background layers (in render order)
         self.foreground_layers = []  # ordered list of all foreground layers (in render order)
         for layer in tmx_data.layernames:
             # layer names is in the same order from the editor so background layers will be stored in correct order and
             # rendered in that order. In order for this to work, folder name must not contain 'background' (use bg instead)
             if 'background' in layer:
-                self.background_layers.append(self.create_decoration_layer(tmx_data, layer))
+                self.background_layers.append(self.create_tile_layer(tmx_data, layer, "CollideableTile"))
             # see commenting for self.background_layers
             elif 'foreground' in layer:
-                self.foreground_layers.append(self.create_decoration_layer(tmx_data, layer))'''
+                self.foreground_layers.append(self.create_tile_layer(tmx_data, layer, "CollideableTile"))
 
         # get objects
         #self.transitions = self.create_object_layer(tmx_data, 'transitions', 'Trigger')
@@ -86,7 +89,7 @@ class Level:
 
     # creates all the neccessary types of tiles seperately and places them in individual layer groups
     def create_tile_layer(self, tmx_file, layer_name, type):
-        sprite_group = pygame.sprite.Group()
+        sprite_group = []
         layer = tmx_file.get_layer_by_name(layer_name)
         tiles = layer.tiles()
         parallax = (layer.parallaxx, layer.parallaxy)
@@ -95,20 +98,20 @@ class Level:
             # gets layer from tmx and creates StaticTile for every tile in the layer, putting them in both SpriteGroups
             for x, y, surface in tiles:
                 tile = StaticTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface)
-                sprite_group.add(tile)
+                sprite_group.append(tile)
                 self.all_tile_sprites.add(tile)
 
         elif type == 'CollideableTile':
             for x, y, surface in tiles:
                 tile = CollideableTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface)
-                sprite_group.add(tile)
+                sprite_group.append(tile)
                 self.all_tile_sprites.add(tile)
 
         elif type == 'HazardTile':
             for x, y, surface in tiles:
                 tile = HazardTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface,
                                   self.player.sprite)
-                sprite_group.add(tile)
+                sprite_group.append(tile)
                 self.all_tile_sprites.add(tile)
 
         else:
@@ -203,6 +206,7 @@ class Level:
 # -- check methods --
 
     def get_input(self):
+        rot_value = 0
         keys = pygame.key.get_pressed()
 
         # pause pressed prevents holding key and rapidly switching between T and F
@@ -214,12 +218,19 @@ class Level:
         else:
             self.pause_pressed = False
 
+        # world rotation
+        if keys[pygame.K_LEFT]:
+            rot_value -= self.rot_rate
+        if keys[pygame.K_RIGHT]:
+            rot_value += self.rot_rate
 
         # TODO testing, remove
         if (keys[pygame.K_z] and keys[pygame.K_LSHIFT]) or self.get_controller_input('dev off'):
             self.dev_debug = False
         elif keys[pygame.K_z] or self.get_controller_input('dev on'):
             self.dev_debug = True
+
+        return rot_value
 
     # checks controller inputs and returns true or false based on passed check
     def get_controller_input(self, input_check):
@@ -236,16 +247,15 @@ class Level:
                 return True
         return False
 
-# -- visual --
+# -- utilities --
 
     # draw tiles in tile group but only if in camera view (in tile.draw method)
-    def draw_tile_group(self, group):
-        for tile in group:
+    def draw_tile_layer(self, layer):
+        layer.sort(key=lambda t: t.pos[1])  # sort layer based on y position of tiles
+        # render layer
+        for tile in layer:
             # render tile
             tile.draw(self.screen_surface, self.screen_rect)
-            # TODO testing, remove
-            if self.dev_debug:
-                pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
 
 # -- menus --
 
@@ -265,11 +275,12 @@ class Level:
     # updates the level allowing tile scroll and displaying tiles to screen
     # order is equivalent of layers
     def update(self, dt):
+        player = self.player.sprite
         # #### INPUT > GAME(checks THEN UPDATE) > RENDER ####
         # checks deal with previous frames interactions. Update creates interactions for this frame which is then diplayed
 
         # -- INPUT --
-        self.get_input()
+        rot_value = self.get_input()
 
         # -- CHECKS (For the previous frame)  --
         if not self.pause:
@@ -290,23 +301,21 @@ class Level:
             '''if player.get_respawn():
                 self.camera.focus(True)'''
 
-            # checks which collideable tiles are in screen view.
-            # TODO in function? More tile layers included? Use for tile rendering? IF ADD MORE LAYERS, CHANGE PLAYER TILES COLLISION LAYER
-            '''self.tiles_in_screen = []
-            for tile in self.collideable:
-                if tile.hitbox.colliderect(self.screen_rect):
-                    self.tiles_in_screen.append(tile)'''
-
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
-            self.player.update(self.collideable, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
-            #self.all_sprites.update(scroll_value)'''
+            self.player.update(self.collideable, rot_value, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            scroll_value = (0, 0)  # TODO implement
+            self.all_tile_sprites.update(scroll_value, rot_value, player.get_head().get_pos())
 
         # -- RENDER --
+        #tiles_in_screen.sort(key=lambda t: t.pos[1])
+
         # Draw
-        self.player.sprite.draw()
-        if not self.dev_debug:
-            self.draw_tile_group(self.collideable)
-        #self.draw_tile_group(self.hazards)
+        for layer in self.background_layers:
+            self.draw_tile_layer(layer)
+        player.draw()
+        self.draw_tile_layer(self.collideable)
+        for layer in self.foreground_layers:
+            self.draw_tile_layer(layer)
 
         # must be after other renders to ensure menu is drawn last
         if self.pause:
@@ -319,6 +328,6 @@ class Level:
                 pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
                 pygame.draw.circle(self.screen_surface, 'green', tile.hitbox.center, tile.radius, 1)
             # TODO testing
-            for point in self.player.sprite.brain.path:
+            for point in player.brain.path:
                 pygame.draw.circle(self.screen_surface, 'green', point, 2)
-            pygame.draw.circle(self.screen_surface, 'pink', self.player.sprite.brain.target, 2)
+            pygame.draw.circle(self.screen_surface, 'pink', player.brain.target, 2)

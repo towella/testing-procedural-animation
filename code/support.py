@@ -82,8 +82,25 @@ def import_cut_graphics(path, art_tile_size):
 
     return cut_tiles
 
-
 # ------------------ PROCEDURAL GRAPHICS ------------------
+
+
+def cut_sprite_stack(surface, dim):
+    layer_num = int(surface.get_height() / dim[1])
+
+    cut_layers = []
+    # keeps track of different segments of tilesheet
+    for layer in range(layer_num):
+        # x and y coords on layer img
+        x = 0
+        y = layer * dim[1]
+        # makes new surface and places segment of sheet (tile) on new surface
+        new_surf = crop(surface, x, y, dim[0], dim[1])
+        cut_layers.append(new_surf)
+
+    cut_layers.reverse()  # layers are in reverse on sprite stack sheet
+    return cut_layers
+
 
 def swap_colour(img, old_c, new_c):
     img.set_colorkey(old_c)
@@ -162,6 +179,15 @@ def get_distance(pos, point):
     x = point[0] - pos[0]
     y = point[1] - pos[1]
     return math.sqrt(x**2 + y**2)
+
+
+def rotate_point_deg(point, origin, angle):
+    rot = math.radians(angle)
+    pos = [point[0] - origin[0], point[1] - origin[1]]  # relative coordinates
+    pos = [pos[0] * math.cos(rot) - pos[1] * math.sin(rot),  # rotate
+           pos[1] * math.cos(rot) + pos[0] * math.sin(rot)]
+    pos = [pos[0] + origin[0], pos[1] + origin[1]]  # cartesian coordinates
+    return pos
 
 
 # crops a surface out of a larger surface (usefull for images)

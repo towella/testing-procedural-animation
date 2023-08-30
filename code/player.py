@@ -1,7 +1,7 @@
 import pygame, math
 from random import randint
 from game_data import tile_size, controller_map, screen_width, screen_height
-from support import get_angle_rad, get_angle_deg, get_distance, lerp2D
+from support import get_angle_rad, rotate_point_deg, get_distance, lerp2D
 
 
 # SET UP FOR PLATFORMER SINCE PLATFORMERS ARE HARDER TO CREATE A PLAYER FOR
@@ -160,12 +160,38 @@ class Player(pygame.sprite.Sprite):
         else:
             self.fabrik_forwards(target)
 
+    def apply_rotation(self, rot_value):
+        # only rotate if required
+        if rot_value != 0:
+            origin = self.head.get_pos()
+
+            # rotate target
+            self.brain.target = rotate_point_deg(self.brain.target, origin, rot_value)
+
+            # rotate pathfinding
+            path = self.brain.path
+            for node in range(len(path)):
+                path[node] = rotate_point_deg(path[node], origin, rot_value)
+
+            # rotate body segments and their legs
+            for i in range(len(self.segments)):
+                self.segments[i].set_pos(rotate_point_deg(self.segments[i].get_pos(), origin, rot_value))
+                # if has legs, rotate legs
+                if self.segments[i].has_legs:
+                    for legpair in self.segments[i].legs:
+                        for foot in range(len(legpair.feet)):
+                            legpair.feet[foot] = rotate_point_deg(legpair.feet[foot], origin, rot_value)
+                        for appendage in legpair.legs:
+                            appendage.target = rotate_point_deg(appendage.target, origin, rot_value)
+                            for joint in range(len(appendage.joints)):
+                                appendage.joints[joint] = rotate_point_deg(appendage.joints[joint], origin, rot_value)
+
     def apply_scroll(self, scroll_value):
         self.rect.x -= int(scroll_value[1])
         self.rect.y -= int(scroll_value[0])
         self.sync_hitbox()
 
-    def update(self, tiles, dt): #, scroll_value, current_spawn):
+    def update(self, tiles, rot_value, dt):  #, scroll_value, current_spawn):
 
         # respawns player if respawn has been evoked
         #if self.respawn:
@@ -175,6 +201,7 @@ class Player(pygame.sprite.Sprite):
         #self.get_input(dt, tiles)
 
         # -- CHECKS/UPDATE --
+
         # - update brain -
         self.brain.update(tiles)
         target = self.brain.get_target()
@@ -193,7 +220,9 @@ class Player(pygame.sprite.Sprite):
             else:
                 self.segments[i].update(tiles, angle)
 
-        # scroll shouldn't have collision applied, it is separate movement
+        # - update world -
+        # scroll and rotation shouldn't have collision applied, it is separate movement
+        self.apply_rotation(rot_value)
         #self.apply_scroll(scroll_value)
 
 # -- visual methods --
@@ -700,7 +729,7 @@ class Brain:
         # -- pathfinding --
         self.target = self.head.get_pos()
         self.path = [self.head.get_pos()]  # start path as current position (no target yet defined). Len must be > 0
-        self.path_precision = 15  # 15 !!!!! should be less than tile size !!!!!
+        self.path_precision = 14  # 15 !!!!! diagonal should be less than tile size !!!!!
 
     # -- calculate propeties --
 

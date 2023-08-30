@@ -20,7 +20,12 @@ o Fix collisions
 o Make pathfinding work with:
     - collisions (use circle colliders?)
     - joint restriction
+    - fix pathfinding with sprite stacking
 o Optimise pathfinding
+
+o sprite stacking
+    - cache texture rotations
+    - fix pixel imperfect rotations of textures
 
 --------------------------------------------------------------------
 o Procedurally generated terrain (dungeon terminal game)
