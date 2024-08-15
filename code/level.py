@@ -8,6 +8,7 @@ from support import *
 # - tiles -
 from tiles import StaticTile, CollideableTile, HazardTile
 # - objects -
+from creature import Creature
 from player import Player
 from trigger import SpawnTrigger, Trigger
 from spawn import Spawn
@@ -17,7 +18,7 @@ from text import Font
 
 
 class Level:
-    def __init__(self, fps, level_data, screen_surface, screen_rect, controllers, starting_spawn):
+    def __init__(self, level_data, screen_surface, screen_rect, controllers, starting_spawn):
         # TODO testing, remove
         self.dev_debug = False
 
@@ -36,7 +37,7 @@ class Level:
         self.pause_pressed = False
 
         self.rot_value = 0  # ∆ rotation in deg
-        self.rot_rate = 3  # in deg
+        self.rot_rate = 2  # in deg
 
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
@@ -62,24 +63,23 @@ class Level:
         self.player_spawns = self.create_object_layer(tmx_data, 'spawns', 'Spawn')
         self.spawn_triggers = self.create_object_layer(tmx_data, 'spawns', 'SpawnTrigger')
         # self.player_spawn_triggers = self.create_object_group(tmx_data, 'spawns', 'Trigger')
-        self.player = self.create_object_layer(tmx_data, '', 'Player')  # must be completed after player_spawns layer
+        self.player = self.create_object_layer(tmx_data, '', 'Player')
+        self.creatures = self.create_object_layer(tmx_data, 'creatures', 'Creature')  # must be completed after player_spawns layer
 
         # get tiles
         self.collideable = self.create_tile_layer(tmx_data, 'collideable', 'CollideableTile')
         '''self.hazards = self.create_tile_layer(tmx_data, 'hazards',
-                                              'HazardTile')  # TODO hazard, what type? (use tiled custom hitboxing feature on hazard tiles)
-        self.abs_camera_boundaries = {
-            'x': self.create_tile_layer(tmx_data, 'abs camera boundaries x', 'CollideableTile'),
-            'y': self.create_tile_layer(tmx_data, 'abs camera boundaries y', 'CollideableTile')}
+                                              'HazardTile')  # TODO hazard, what type? (use tiled custom hitboxing feature on hazard tiles)'''
 
         # - camera setup -
-        self.camera = Camera(self.screen_surface, self.screen_rect, self.player.sprite, self.abs_camera_boundaries,
-                             controllers)
+        room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
+        rot = 0
+        self.camera = Camera(self.screen_surface, self.screen_rect, room_dim, self.player.sprite, controllers)
         self.camera.focus(True)  # focuses camera on target
-        scroll_value = self.camera.get_scroll(dt, fps)  # returns scroll, now focused
+        scroll_value = self.camera.get_scroll(dt, rot)  # returns scroll, now focused
         self.player.sprite.apply_scroll(scroll_value)  # applies new scroll to player
-        self.all_tile_sprites.update(scroll_value)  # applies new scroll to all tile sprites
-        self.all_object_sprites.update(scroll_value)  # applies new scroll to all object sprites'''
+        self.all_tile_sprites.update(scroll_value, rot)  # applies new scroll to all tile sprites
+        self.all_object_sprites.update(scroll_value, rot)  # applies new scroll to all object sprites'''
 
         # - text setup -
         self.small_font = Font(resource_path(fonts['small_font']), 'white')
@@ -109,8 +109,7 @@ class Level:
 
         elif type == 'HazardTile':
             for x, y, surface in tiles:
-                tile = HazardTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface,
-                                  self.player.sprite)
+                tile = HazardTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface, self.player.sprite)
                 sprite_group.append(tile)
                 self.all_tile_sprites.add(tile)
 
@@ -155,13 +154,25 @@ class Level:
         elif object_class == 'Player':
             sprite_group = pygame.sprite.GroupSingle()
             # finds the correct starting position corresponding to the last room/transition
+
             # TODO remove need for self.player_spawns
             spawn = self.player_spawns[self.starting_spawn]
-            body_segments = 10
-            segment_spacing = 20
-            player = Player(self, spawn, body_segments, segment_spacing)
+            radius = 5
+
+            player = Player(spawn, self.screen_surface, radius)
             sprite_group.add(player)
             self.player_spawn = spawn  # stores the spawn instance for future respawn
+
+        elif object_class == "Creature":
+            sprite_group = pygame.sprite.Group()
+
+            # TODO remove need for self.player_spawns
+            spawn = self.player_spawns[self.starting_spawn]
+            body_segments = 6
+            segment_spacing = 14
+
+            creature = Creature(self, spawn, body_segments, segment_spacing)
+            sprite_group.add(creature)
 
         else:
             raise Exception(f"Invalid create_object_group type: '{type}' ")
@@ -220,9 +231,9 @@ class Level:
 
         # world rotation
         if keys[pygame.K_LEFT]:
-            rot_value -= self.rot_rate
-        if keys[pygame.K_RIGHT]:
             rot_value += self.rot_rate
+        if keys[pygame.K_RIGHT]:
+            rot_value -= self.rot_rate
 
         # TODO testing, remove
         if (keys[pygame.K_z] and keys[pygame.K_LSHIFT]) or self.get_controller_input('dev off'):
@@ -286,8 +297,8 @@ class Level:
         if not self.pause:
 
             # scroll -- must be first, camera calculates scroll, stores it and returns it for application
-            '''scroll_value = self.camera.return_scroll(dt, fps)
-            self.camera.focus(False)'''
+            scroll_value = self.camera.get_scroll(dt, rot_value)
+            self.camera.focus(False)
 
             # which object should handle collision? https://gamedev.stackexchange.com/questions/127853/how-to-decide-which-gameobject-should-handle-the-collision
 
@@ -302,16 +313,19 @@ class Level:
                 self.camera.focus(True)'''
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
-            self.player.update(self.collideable, rot_value, dt)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
-            scroll_value = (0, 0)  # TODO implement
-            self.all_tile_sprites.update(scroll_value, rot_value, player.get_head().get_pos())
+            self.player.update(self.collideable, rot_value, dt, scroll_value)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
+            # TODO update sprite group
+            for creature in self.creatures:
+                creature.update(self.collideable, rot_value, dt, player.get_pos(), scroll_value)
+            self.all_tile_sprites.update(scroll_value, rot_value, player.get_pos())
 
         # -- RENDER --
-        #tiles_in_screen.sort(key=lambda t: t.pos[1])
 
         # Draw
         for layer in self.background_layers:
             self.draw_tile_layer(layer)
+        for creature in self.creatures:
+            creature.draw()
         player.draw()
         self.draw_tile_layer(self.collideable)
         for layer in self.foreground_layers:
@@ -328,6 +342,7 @@ class Level:
                 pygame.draw.rect(self.screen_surface, 'green', tile.hitbox, 1)
                 pygame.draw.circle(self.screen_surface, 'green', tile.hitbox.center, tile.radius, 1)
             # TODO testing
-            for point in player.brain.path:
-                pygame.draw.circle(self.screen_surface, 'green', point, 2)
-            pygame.draw.circle(self.screen_surface, 'pink', player.brain.target, 2)
+            for creature in self.creatures:
+                for point in creature.brain.path:
+                    pygame.draw.circle(self.screen_surface, 'green', point, 2)
+                pygame.draw.circle(self.screen_surface, 'pink', creature.brain.target, 2)

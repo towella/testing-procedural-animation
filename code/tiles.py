@@ -47,7 +47,7 @@ class CollideableTile(StaticTile):
     def __init__(self, pos, size, parallax, surface):
         super().__init__(pos, size, parallax)  # passing in variables to parent class
         self.images = cut_sprite_stack(surface, size)  # image is passed tile surface
-        self.hitbox = self.images[0].get_rect()  # TODO fix hitboxing for spritestacked tiles
+        self.hitbox = self.images[0].get_rect()
         self.hitbox.topleft = pos
         self.pos = [pos[0], pos[1]]  # used rather than rect so can use floats for precision
         self.radius = self.hitbox.width // 2  # assumes hitbox is square

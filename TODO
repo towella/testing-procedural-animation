@@ -18,16 +18,15 @@ o Fix collisions
     - body segment
 
 o Make pathfinding work with:
-    - collisions (use circle colliders?)
     - joint restriction
-    - fix pathfinding with sprite stacking
+    - fix pathfinding with circle colliders
+    - Problem when target is too close to head (less than sensitivity value) (set view rad to 20 in brain)
 o Optimise pathfinding
 
 o sprite stacking
     - cache texture rotations
-    - fix pixel imperfect rotations of textures
+    - fix tiles popping out of frame
 
 --------------------------------------------------------------------
 o Procedurally generated terrain (dungeon terminal game)
 o Sprite stacking projection
-o rotation around head

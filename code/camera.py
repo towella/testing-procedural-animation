@@ -1,13 +1,13 @@
 import pygame
 from game_data import controller_map, tile_size
+from support import rotate_point_deg, get_angle_deg, get_rect_corners
 
 
 class Camera():
-    def __init__(self, surface, screen_rect, player, abs_boundaries, controllers):
+    def __init__(self, surface, screen_rect, room_dim, player, controllers):
         self.player = player  # the target of the camera
-        self.target = [self.player.rect.centerx, self.player.rect.centery]  # target position
+        self.target = self.player.get_pos()  # target position
         self.scroll_value = [0, 0]  # the scroll, shifts the world to create camera effect
-        self.abs_boundaries = abs_boundaries
         self.controllers = controllers
         self.focus_target = False
 
@@ -21,18 +21,16 @@ class Camera():
         # -- fall --
         self.fall_lerp_max = 8  # (8) maximum sensitivity the camera can track the player w/ while falling
         self.fall_lerp_increment = 0.5  # used to increment the falling lerp gradually to it's max for smoothness
-        self.fall_min_time = 60  # number of frames w/ y vel > 0 before falling logic is applied
+        self.fall_min_time = 30  # number of frames w/ y vel > 0 before falling logic is applied
+        # -- dash --
+        self.dash_lerp = 8
         # -- lerp active values --
         self.lerp_x = self.norm_lerp  # controls scroll interpolation amount x (sensitivity of camera to movement of target)
         self.lerp_y = self.norm_lerp  # controls scroll interpolation amount y (sensitivity of camera to movement of target)
 
         # -- offsets --
         self.facing_offset = 25  # offset from the player on the horizontal when not falling and change facing dir (40)
-        self.walking_offset = 35  # offset from the player on the horizontal when walking (not falling and move hori)
-
-        self.fall_offset = 0  # added to when falling, allows gradual movement of target
-        self.fall_offset_max = 100  # max offset from player on vertical when falling
-        self.fall_offset_increment = 6  # increment target is moved by
+        self.walking_offset = 38  # offset from the player on the horizontal when walking (not falling and move hori)
 
         self.look_up_down = 100
         self.look_up_down_timer = 0
@@ -45,29 +43,24 @@ class Camera():
         self.screen_center_y = surface.get_height() // 2
         self.screen_rect = screen_rect
 
+        # -- room dimensions and bounding rect --
+        room_width = room_dim[0]
+        room_height = room_dim[1]
+        self.room_corners = [[0, 0], [0, room_height], [room_width, room_height], [room_width, 0]]  # corners outlining rect
+        self.room_rect = pygame.rect.Rect(0, 0, room_width, room_height)
+
         # -- boundary collision --
         # separate for x and y so that the shorter one doesn't glitch out with too large a tolerance
         # half screen dimension to snap camera to wall as soon as player turns around anywhere on wall side of screen
         self.collision_tolerance_x = self.screen_width // 2
         self.collision_tolerance_y = self.screen_height // 2
 
+        self.camera_boundaries()
+
 # -- input --
 
     def get_input(self):
         keys = pygame.key.get_pressed()
-
-        # -- camera look up and down--
-        if self.player.on_ground:
-            if keys[pygame.K_DOWN] or self.get_controller_input('look_down'):
-                self.look_up_down_timer += 1
-                if self.look_up_down_timer >= self.look_up_down_max:
-                    self.target[1] += self.look_up_down
-            elif keys[pygame.K_UP] or self.get_controller_input('look_up'):
-                self.look_up_down_timer += 1
-                if self.look_up_down_timer >= self.look_up_down_max:
-                    self.target[1] -= self.look_up_down
-            else:
-                self.look_up_down_timer = 0
 
         # TODO testing remove potentially
         if keys[pygame.K_LSHIFT] and keys[pygame.K_c]:
@@ -96,105 +89,65 @@ class Camera():
         if self.zoom < 1:
             self.zoom = 1
 
+    def reset_zoom(self):
+        self.zoom = 1
+
     def update_target(self):
-        # target[0] = x, target[1] = y
-        self.target = [self.player.rect.centerx, self.player.rect.centery]  # sets target to player pos for modification
+        self.target = self.player.get_pos()  # sets target to player pos for modification
 
         self.get_input()
 
-        # -- player horizontal directional offset --
-        '''# walking
-        if self.player.direction.x != 0:
-            # right
-            if self.player.direction.x > 0:
-                self.target[0] += self.walking_offset
-            # left
-            else:
-                self.target[0] -= self.walking_offset'''
+        # APPLY OFFSETS TO TARGET HERE
 
-        # facing (multiply distance by direction)
-        self.target[0] += self.facing_offset * self.player.facing_right
-
-        # -- falling vertical offset --
-        # if player IS falling have vertical offset
-        # TODO change or remove offset if player is on a wall
-        if self.player.fall_timer > self.fall_min_time:
-            # gradually moves target below player
-            self.fall_offset += self.fall_offset_increment
-            # caps the fall_offset at the max
-            if self.fall_offset > self.fall_offset_max:
-                self.fall_offset = self.fall_offset_max
-            # applies fall_offset
-            self.target[1] += self.fall_offset
-        else:
-            self.fall_offset = 0
+    # rotates level 'rectangle' corners
+    def update_level_rect(self, rot_value):
+        origin = self.player.get_pos()
+        # rotate corner points
+        for p in range(len(self.room_corners)):
+            self.room_corners[p][0], self.room_corners[p][1] = rotate_point_deg(self.room_corners[p], origin, rot_value)
 
     def camera_boundaries(self):
-        # enables scroll camera boundaries
-        for tile in self.abs_boundaries['x']:
-            # having proxy variables allows modification of value for maths without moving actual tile pos
-            tile_right = tile.hitbox.right
-            tile_left = tile.hitbox.left
-            # if the screen's horizontal is a pixel away or inside of tile within collision tollerance, stop scroll and snap
-            # must be moving towards the wall, otherwise cant move away from the wall in the other direction
-            # TODO if on the screen
-            # TODO respawn
-            # TODO general bounds
-            if self.collision_tolerance_x > tile_right >= self.screen_rect.left and self.scroll_value[0] < 0:
+        # must MODIFY existing scroll rather than reassigning
+        # if edge of screen has exceeded edge of level, reduce scroll based on difference between
+        # MODIFED level edge (hence +ing or -ing scroll value as well as just finding dif between edges) and screen edge
 
-                # stop scroll
-                self.scroll_value[0] = 0
-                # while the screen is in the tile, snap the screen to the tile grid.
-                # allows pixel perfect boundaries
-                while tile_right > self.screen_rect.left:
-                    self.scroll_value[0] += 1
-                    tile_right -= 1
-                break
-            # TODO potentially need abs?
-            elif (self.screen_rect.right - self.collision_tolerance_x) < tile_left <= self.screen_rect.right and \
-                    self.scroll_value[0] > 0:
-                self.scroll_value[0] = 0
-                while tile_left < self.screen_rect.right:
-                    self.scroll_value[0] -= 1
-                    tile_left += 1
-                break
+        '''# horizontal
+        if self.screen_rect.left <= self.room_rect.left - self.scroll_value[0]:
+            self.scroll_value[0] += abs(self.room_rect.left - self.screen_rect.left - self.scroll_value[0])
+        if self.screen_rect.right >= self.room_rect.right - self.scroll_value[0]:
+            self.scroll_value[0] += -abs(self.screen_rect.right - self.room_rect.right + self.scroll_value[0])
 
-        for tile in self.abs_boundaries['y']:
-            tile_top = tile.hitbox.top
-            tile_bottom = tile.hitbox.bottom
-            # TODO potentially need abs?
-            if (self.screen_rect.bottom - self.collision_tolerance_y) < tile_top <= self.screen_rect.bottom and \
-                    self.scroll_value[1] > 0:
-                self.scroll_value[1] = 0
-                while tile_top < self.screen_rect.bottom:
-                    self.scroll_value[1] -= 1
-                    tile_top += 1
-                break
-            elif self.collision_tolerance_y > tile_bottom >= self.screen_rect.top and self.scroll_value[1] < 0:
-                self.scroll_value[1] = 0
-                while tile_bottom > self.screen_rect.top:
-                    self.scroll_value[1] += 1
-                    tile_bottom -= 1
-                break
+        # vertical
+        if self.screen_rect.top <= self.room_rect.top - self.scroll_value[1]:
+            self.scroll_value[1] += abs(self.room_rect.top - self.screen_rect.top - self.scroll_value[1])
+        if self.screen_rect.bottom >= self.room_rect.bottom - self.scroll_value[1]:
+            self.scroll_value[1] -= abs(self.screen_rect.bottom - self.room_rect.bottom + self.scroll_value[1])'''
+
+        for pair in range(4):
+            a = self.room_corners[pair]
+            b = self.room_corners[(pair+1) % 4]  # loops around if == 4 (so pair 3, 0 is included)
+            c = self.room_corners[(pair+2) % 4]  # corner opposite to a
+            angle = get_angle_deg(a, b)
+            for corner in get_rect_corners(self.screen_rect):
+                c_angle = get_angle_deg(a, c)
+                diff_c = angle - c_angle
+                corner_angle = get_angle_deg(a, corner)
+                diff_corner = angle - corner_angle
+                # if the point is not inside the given line (inside determined by angle to opp corner), modify scroll
+                if not (diff_c < 0 and corner_angle <= 0) and not (diff_c > 0 and corner_angle >= 0):
+                    pass  # TODO work out how to restrict camera lol
+
 
 # -- Getters and Setters --
 
     # scrolls the world when the player hits certain points on the screen
     # dynamic camera tut, dafluffypotato:  https://www.youtube.com/watch?v=5q7tmIlXROg
-    def get_scroll(self, dt, fps):
-        self.update_target()
+    def get_scroll(self, dt, rot_value):
+        self.update_target()  # update camera target
+        self.update_level_rect(rot_value)  # update level bounds to cam rotation
 
         # if camera is to follow normally, do normal stuff, otherwise, focus camera directly on target
         if not self.focus_target:
-
-            # -- decreases LERP_y gradually when falling and resets when hit ground --
-            if self.player.direction.y > 0 and not self.player.on_ground:
-                self.lerp_y -= self.fall_lerp_increment
-                if self.lerp_y < self.fall_lerp_max:
-                    self.lerp_y = self.fall_lerp_max
-            else:
-                self.lerp_y = self.norm_lerp
-
             # scroll value cancels player movement with scrolling everything, including player (centerx - scroll_value)
             # subtracts screen width//2 to place player in the center of the screen rather than left edge
 
@@ -210,56 +163,19 @@ class Camera():
             self.scroll_value = [-(self.screen_center_x - self.target[0]),
                                  -(self.screen_center_y - self.target[1])]
 
-        # camera boundaries
-        self.camera_boundaries()
-
         # dt
         self.scroll_value[0] = round(self.scroll_value[0] * dt)
         self.scroll_value[1] = round(self.scroll_value[1] * dt)
 
+        # camera boundaries
+        self.camera_boundaries()
+
+        # shift room boundary rect corners
+        for p in range(len(self.room_corners)):
+            self.room_corners[p] = [self.room_corners[p][0] - self.scroll_value[0],
+                                    self.room_corners[p][1] - self.scroll_value[1]]
+
         return self.scroll_value
-
-    ''' # enables scroll camera boundaries
-        for tile in self.boundaries_x:
-            # having proxy variables allows modification of value for maths without moving actual tile pos
-            tile_right = tile.hitbox.right
-            tile_left = tile.hitbox.left
-            # if the screen's horizontal is a pixel away or inside of tile within collision tollerance, stop scroll and snap
-            # must be moving towards the wall, otherwise cant move away from the wall in the other direction
-            # TODO not pixel perfect yet
-            # TODO if on the screen
-            if self.collision_tolerance > tile_right + 1 >= self.screen_rect.left and self.scroll_value[1] < 0:
-                # stop scroll
-                self.scroll_value[1] = 0
-                # while the screen is in the tile, snap the screen to the tile grid.
-                # allows pixel perfect boundaries
-                while tile_right > self.screen_rect.left:
-                    self.scroll_value[1] += 1
-                    tile_right -= 1
-                break
-
-            elif (self.screen_rect.right - self.collision_tolerance) < tile_left - 1 <= self.screen_rect.right and self.scroll_value[1] > 0:
-                self.scroll_value[1] = 0
-                while tile_left < self.screen_rect.right:
-                    self.scroll_value[1] -= 1
-                    tile_left += 1
-                break
-
-        for tile in self.boundaries_y:
-            tile_top = tile.hitbox.top
-            tile_bottom = tile.hitbox.bottom
-            if (self.screen_rect.bottom - self.collision_tolerance) < tile_top <= self.screen_rect.bottom and self.scroll_value[0] > 0:
-                self.scroll_value[0] = 0
-                while tile_top < self.screen_rect.bottom:
-                    self.scroll_value[0] -= 1
-                    tile_top += 1
-                break
-            elif self.collision_tolerance > tile_bottom >= self.screen_rect.top and self.scroll_value[0] < 0:
-                self.scroll_value[0] = 0
-                while tile_bottom > self.screen_rect.top:
-                    self.scroll_value[0] += 1
-                    tile_bottom -= 1
-                break'''
 
     # returns zoom value and offset required to zoom into target point (currently center of screen)
     def get_zoom(self):

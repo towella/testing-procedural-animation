@@ -1,4 +1,4 @@
-# pyinstaller code/main.py code/camera.py code/game_data.py code/player.py code/level.py code/spawn.py code/support.py code/tiles.py code/trigger.py --onefile --noconsole
+# pyinstaller code/main.py code/camera.py code/game_data.py code/creature.py code/level.py code/spawn.py code/support.py code/tiles.py code/trigger.py --onefile --noconsole
 
 
 # screen resizing tut, dafluffypotato: https://www.youtube.com/watch?v=edJZOQwrMKw
@@ -61,7 +61,7 @@ def game():
     fps = clock.get_fps()
 
     starting_spawn = 'initial'
-    level = Level(fps, '../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks, starting_spawn)
+    level = Level('../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks, starting_spawn)
 
     run = True
     while run:
@@ -100,7 +100,7 @@ def game():
                     pygame.display.toggle_fullscreen()
                     level.set_pause()
                 elif event.key == pygame.K_r:
-                    level = Level(fps, '../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks,
+                    level = Level('../rooms/tiled_rooms/room_0.tmx', screen, screen_rect, joysticks,
                                   starting_spawn)
 
             # Mouse events

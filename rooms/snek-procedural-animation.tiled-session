@@ -3,12 +3,12 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "tiled_rooms/room_0.tmx",
+    "activeFile": "",
     "expandedProjectPaths": [
-        ".",
-        "tiled_templates",
         "tiled_rooms",
-        "tiled_tilesets"
+        "tiled_templates",
+        "tiled_tilesets",
+        "."
     ],
     "file.lastUsedOpenFilter": "All Files (*)",
     "fileStates": {
@@ -79,20 +79,20 @@
         },
         "tiled_rooms/room_0.tmx": {
             "expandedGroupLayers": [
-                4,
-                3
+                3,
+                4
             ],
-            "scale": 0.7707,
-            "selectedLayer": 3,
+            "scale": 1.25,
+            "selectedLayer": 0,
             "viewCenter": {
-                "x": 249.1241728298949,
-                "y": 103.80173867912288
+                "x": 199.6,
+                "y": 222.40000000000003
             }
         },
         "tiled_tilesets/sprite stack test.tsx": {
             "dynamicWrapping": true,
             "scaleInDock": 9.4748,
-            "scaleInEditor": 7.61
+            "scaleInEditor": 3.12
         }
     },
     "last.externalTilesetPath": "/Users/towella/Documents/programming/GitHub/pygame-library/assets/level_assets/tiles/tile_set_template",
@@ -107,8 +107,6 @@
     "map.tileHeight": 16,
     "map.tileWidth": 16,
     "openFiles": [
-        "tiled_rooms/room_0.tmx",
-        "tiled_tilesets/sprite stack test.tsx"
     ],
     "project": "snek-procedural-animation.tiled-project",
     "recentFiles": [
