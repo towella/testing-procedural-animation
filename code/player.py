@@ -12,7 +12,7 @@ class Player(pygame.sprite.Sprite):
         self.radius = radius
 
         self.rot = 0  # in RAD
-        self.speed = 2
+        self.speed = 5
         self.direction = [0, 0]
 
     def get_input(self):

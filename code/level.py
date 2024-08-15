@@ -168,7 +168,7 @@ class Level:
 
             # TODO remove need for self.player_spawns
             spawn = self.player_spawns[self.starting_spawn]
-            body_segments = 6
+            body_segments = 8
             segment_spacing = 14
 
             creature = Creature(self, spawn, body_segments, segment_spacing)
@@ -325,7 +325,7 @@ class Level:
         for layer in self.background_layers:
             self.draw_tile_layer(layer)
         for creature in self.creatures:
-            creature.draw()
+            creature.draw(self.dev_debug)
         player.draw()
         self.draw_tile_layer(self.collideable)
         for layer in self.foreground_layers:

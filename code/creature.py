@@ -33,6 +33,9 @@ class Creature(pygame.sprite.Sprite):
         # - Brain -
         self.brain = Brain(self.head)
 
+        # - Visuals -
+        self.outline_curve_segments = 3
+
 # -- initialisation --
 
     # initialises the body
@@ -43,7 +46,7 @@ class Creature(pygame.sprite.Sprite):
             segment_spacing -= 1  # TODO TEST REMOVE (dynamically change spacing and circle size of segs)
             if segment_spacing < 1:  # TODO TEST REMOVE
                 segment_spacing = 1  # TODO TEST REMOVE
-            if i == 5 or i == 0:
+            if i == 4 or i == 0:
                 body_points.append(BodySegment(self.surface, spawn, segment_spacing, True, body_points[i]))
             else:
                 body_points.append(BodySegment(self.surface, spawn, segment_spacing, False, body_points[i]))
@@ -208,12 +211,63 @@ class Creature(pygame.sprite.Sprite):
 
 # -- visual methods --
 
-    def draw(self):
-        for segment in self.segments:
-            segment.draw()
+    # returns array of points from body segs to be drawn as a polygon using in built pygame method
+    # moving in a clockwise direction beginning with the head mid left (45deg front left)
+    def get_body_polygon(self):
+        polygon = []
 
-        for i in range(1, len(self.brain.path)):
-            pygame.draw.line(self.surface, "red", self.brain.path[i-1], self.brain.path[i], 1)
+        # begin with head points moving clockwise
+        head = self.segments[0].get_pos()
+        head_angle = self.segments[0].get_rot() + math.pi/(self.outline_curve_segments + 1) * self.outline_curve_segments//2  # set angle to left (NOT 90deg)
+        head_rad = self.segments[0].get_radius()
+        for i in range(self.outline_curve_segments):
+            polygon.append([
+                head[0] + math.sin(head_angle) * head_rad,
+                head[1] + math.cos(head_angle) * head_rad
+            ])
+            head_angle -= math.pi/(self.outline_curve_segments + 1)  # increment angle clockwise by interval
+        right = []
+        left = []
+
+        # begins at head, works around body
+        for seg in range(len(self.segments)):
+            pos = self.segments[seg].get_pos()
+            angle = self.segments[seg].get_rot()
+            rad = self.segments[seg].get_radius()
+            right.append([pos[0] + math.sin(angle - math.pi/2) * rad, pos[1] + math.cos(angle - math.pi/2) * rad])
+            left.append([pos[0] + math.sin(angle + math.pi/2) * rad, pos[1] + math.cos(angle + math.pi/2) * rad])
+
+        # add in right side points
+        polygon += right
+
+        # add in tail points clockwise
+        tail = self.segments[-1].get_pos()
+        # flip angle to be facing in the reverse direction and set angle to right
+        tail_angle = self.segments[-1].get_rot() + math.pi + math.pi/(self.outline_curve_segments + 1) * self.outline_curve_segments//2
+        tail_rad = self.segments[-1].get_radius()
+        for i in range(self.outline_curve_segments):
+            polygon.append([
+                tail[0] + math.sin(tail_angle) * tail_rad,
+                tail[1] + math.cos(tail_angle) * tail_rad
+            ])
+            tail_angle -= math.pi/(self.outline_curve_segments + 1)  # increment angle clockwise by interval
+
+        # complete polygon with reversed left side list (reversed as we're moving clockwise)
+        left.reverse()
+        polygon += left
+
+        # TODO: sort points clockwise order to avoid breaking up of silhoutte
+        return polygon
+
+    def draw(self, dev):
+        for segment in self.segments:
+            segment.draw(dev)
+
+        if dev:
+            for i in range(1, len(self.brain.path)):
+                pygame.draw.line(self.surface, "red", self.brain.path[i-1], self.brain.path[i], 1)
+
+        pygame.draw.polygon(self.surface, "orange", self.get_body_polygon(), 0)
 
 
 # --------- BODY ---------
@@ -252,10 +306,10 @@ class BodySegment(pygame.sprite.Sprite):
         self.has_legs = legs
         if self.has_legs:
             # TODO define these parameters better (mainly for testing)
-            max_leg_length = 50
+            max_leg_length = 30
             number_elbows = 1
             target_angle = 30
-            step_interval = 150
+            step_interval = 90
             leg_thickness = 2
             seg_lengths = []  # [15, 60, 25, 5]
             self.legs = [LegPair(self.surface, self.pos, number_elbows, max_leg_length, target_angle, step_interval,
@@ -360,26 +414,27 @@ class BodySegment(pygame.sprite.Sprite):
 
         self.prev_pos = self.pos  # store current pos in prev_pos ready for next frame
 
-    def draw(self):
+    def draw(self, dev):
         # -- feet --
         if self.has_legs:
             for leg in self.legs:
-                leg.draw()
+                leg.draw(dev)
 
         # -- body --
-        if self.head:
-            pygame.draw.circle(self.surface, 'purple', self.pos, 3)
-        else:
-            pygame.draw.circle(self.surface, 'green', self.pos, 1)
-        pygame.draw.circle(self.surface, 'orange', self.pos, self.radius, 1)
+        if dev:
+            if self.head:
+                pygame.draw.circle(self.surface, 'purple', self.pos, 3)
+            else:
+                pygame.draw.circle(self.surface, 'green', self.pos, 1)
+            pygame.draw.circle(self.surface, 'orange', self.pos, self.radius, 1)
 
-        #pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
+            #pygame.draw.rect(self.surface, 'grey', self.hitbox, 1)  # TODO TESTING hitbox
 
-        # TODO TESTING self.rot
-        x = math.sin(self.rot) * 12
-        y = math.cos(self.rot) * 12
-        epos = (self.pos[0] + x, self.pos[1] + y)
-        pygame.draw.line(self.surface, 'red', self.pos, epos, 1)
+            # TODO TESTING self.rot
+            x = math.sin(self.rot) * 12
+            y = math.cos(self.rot) * 12
+            epos = (self.pos[0] + x, self.pos[1] + y)
+            pygame.draw.line(self.surface, 'red', self.pos, epos, 1)
 
 
 class LegPair:
@@ -529,18 +584,14 @@ class LegPair:
         for i in range(len(self.legs)):
             self.legs[i].update(self.anchor, self.feet[i])
 
-    def draw(self):
-        # ------------ FEET BALLS ---------------
+    def draw(self, dev):
+        # ------------ FEET ---------------
         pygame.draw.circle(self.surface, 'blue', self.feet[0], 4)
         pygame.draw.circle(self.surface, 'blue', self.feet[1], 4)
 
-        # TODO testing
-        #pygame.draw.circle(self.surface, 'red', self.targets[0], 5, 1)
-        #pygame.draw.circle(self.surface, 'red', self.targets[1], 5, 1)
-
         # ----------- LEG SEGMENTS -------------
         for leg in self.legs:
-            leg.draw()
+            leg.draw(dev)
 
 
 class Appendage:
@@ -693,12 +744,14 @@ class Appendage:
         self.target = target
         self.solve_joints()
 
-    def draw(self):
+    def draw(self, dev):
         # skip anchor joint
         for i in range(1, len(self.joints)):
             joint = self.joints[i]
             pygame.draw.line(self.surface, 'black', self.joints[i - 1], joint, self.line_weight)
-            pygame.draw.circle(self.surface, 'pink', joint, 2)
+
+            if dev:
+                pygame.draw.circle(self.surface, 'pink', joint, 2)
 
 
 # --------- BRAIN ---------
