@@ -46,8 +46,7 @@ class Camera():
         # -- room dimensions and bounding rect --
         room_width = room_dim[0]
         room_height = room_dim[1]
-        self.room_corners = [[0, 0], [0, room_height], [room_width, room_height], [room_width, 0]]  # corners outlining rect
-        self.room_rect = pygame.rect.Rect(0, 0, room_width, room_height)
+        self.room_corners = [[0, 0], [0, room_height], [room_width, room_height], [room_width, 0]]  # corners outlining rect (for rot)
 
         # -- boundary collision --
         # separate for x and y so that the shorter one doesn't glitch out with too large a tolerance

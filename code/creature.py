@@ -31,7 +31,7 @@ class Creature(pygame.sprite.Sprite):
         self.corner_correction = 8  # tolerance for correcting player on edges of tiles (essentially rounded corners)
 
         # - Brain -
-        self.brain = Brain(self.head)
+        self.brain = Brain(self.head, self.level)
 
         # - Visuals -
         self.outline_curve_segments = 3
@@ -757,7 +757,7 @@ class Appendage:
 # --------- BRAIN ---------
 
 class Brain:
-    def __init__(self, head_segment):
+    def __init__(self, head_segment, level):
         self.head = head_segment
 
         # -- pathfinding --
@@ -845,6 +845,7 @@ class Brain:
         # exit loop with the full path (reversed so the start is at the start and the target is at the end)
         path.reverse()
 
+        # return path
         return path
 
     # finds a new target then solves a path to that target
@@ -853,7 +854,7 @@ class Brain:
         # generate within certain radius from head
         self.target = (head_pos[0] + randint(-self.view_rad, self.view_rad),
                        head_pos[1] + randint(-self.view_rad, self.view_rad))
-        # continue to randomly generate point until point not in a tile
+        # continue to randomly generate point until point not in a tile and within room
         repeat = True
         while repeat:
             repeat = False  # assume no repeat required until proven neccessary
@@ -861,11 +862,16 @@ class Brain:
                 if tile.hitbox.collidepoint(self.target):
                     self.target = (head_pos[0] + randint(-self.view_rad, self.view_rad),
                                    head_pos[1] + randint(-self.view_rad, self.view_rad))
+                    print(self.target)
                     repeat = True  # point has been re-randomized and needs to be tested again
                     break
 
         # find path to new target
         self.path = self.pathfind(tiles)
+        # if no path can be found, will return empty path. Set target to head and try again next frame
+        if not self.path:
+            self.path = [head_pos]  # path is head
+            self.target = [head_pos[0], head_pos[1]]  # target is head
 
     # -- getters and setters --
     # returns next point in the path to the real final target
@@ -881,14 +887,9 @@ class Brain:
         if self.head.hitbox.collidepoint(self.target) or self.path_timer >= self.path_reset:
             self.path_timer = 0
             self.find_target(tiles)
-
-        # create or modify path to target
-        if self.head.hitbox.collidepoint(self.path[0]):
+        # if target not reached shorten path to target as path points are reached
+        elif self.head.hitbox.collidepoint(self.path[0]):
             self.path = self.path[1:]
-
-        # if no path can be found, will return empty path. Gen new target and path
-        while not self.path:
-            self.find_target(tiles)
 
 
 class PathNode:

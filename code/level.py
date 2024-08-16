@@ -43,6 +43,8 @@ class Level:
 
         # - get level data -
         tmx_data = load_pygame(resource_path(level_data))  # tile map file
+        self.room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
+        self.room_corners = [[0, 0], [0, self.room_dim[1]], [self.room_dim[0], self.room_dim[1]], [self.room_dim[0], 0]]  # corners outlining rect
         self.all_tile_sprites = pygame.sprite.Group()  # contains all tile sprites for ease of updating/scrolling
         self.all_object_sprites = pygame.sprite.Group()
 
@@ -72,14 +74,14 @@ class Level:
                                               'HazardTile')  # TODO hazard, what type? (use tiled custom hitboxing feature on hazard tiles)'''
 
         # - camera setup -
-        room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
         rot = 0
-        self.camera = Camera(self.screen_surface, self.screen_rect, room_dim, self.player.sprite, controllers)
+        self.camera = Camera(self.screen_surface, self.screen_rect, self.room_dim, self.player.sprite, controllers)
         self.camera.focus(True)  # focuses camera on target
         scroll_value = self.camera.get_scroll(dt, rot)  # returns scroll, now focused
         self.player.sprite.apply_scroll(scroll_value)  # applies new scroll to player
         self.all_tile_sprites.update(scroll_value, rot)  # applies new scroll to all tile sprites
         self.all_object_sprites.update(scroll_value, rot)  # applies new scroll to all object sprites'''
+        self.apply_scroll(scroll_value)  # scroll level systems
 
         # - text setup -
         self.small_font = Font(resource_path(fonts['small_font']), 'white')
@@ -282,6 +284,15 @@ class Level:
         self.pause = pause
 
 # -------------------------------------------------------------------------------- #
+    # only applys scroll to level systems, not child objects of the level
+    def apply_scroll(self, scroll_value):
+        for corner in range(len(self.room_corners)):
+            self.room_corners[corner][0] -= int(scroll_value[0])
+            self.room_corners[corner][1] -= int(scroll_value[1])
+
+    def apply_rotation(self, rot, origin):
+        for corner in range(len(self.room_corners)):
+            self.room_corners[corner] = rotate_point_deg(self.room_corners[corner], origin, rot)
 
     # updates the level allowing tile scroll and displaying tiles to screen
     # order is equivalent of layers
@@ -313,6 +324,9 @@ class Level:
                 self.camera.focus(True)'''
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
+            # shift room boundary rect
+            self.apply_scroll(scroll_value)  # apply scroll to level systems
+            self.apply_rotation(rot_value, player.get_pos())
             self.player.update(self.collideable, rot_value, dt, scroll_value)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
             # TODO update sprite group
             for creature in self.creatures:
@@ -346,3 +360,9 @@ class Level:
                 for point in creature.brain.path:
                     pygame.draw.circle(self.screen_surface, 'green', point, 2)
                 pygame.draw.circle(self.screen_surface, 'pink', creature.brain.target, 2)
+
+            for corner in range(len(self.room_corners)):
+                pygame.draw.line(self.screen_surface, 'pink', self.room_corners[corner], self.room_corners[(corner+1) % 4])
+
+            for creature in self.creatures:
+                pygame.draw.line(self.screen_surface, "red", player.get_pos(), creature.head.get_pos(), 1)
