@@ -759,6 +759,7 @@ class Appendage:
 class Brain:
     def __init__(self, head_segment, level):
         self.head = head_segment
+        self.level = level
 
         # -- pathfinding --
         self.target = self.head.get_pos()
@@ -851,24 +852,55 @@ class Brain:
     # finds a new target then solves a path to that target
     def find_target(self, tiles):
         head_pos = self.head.get_pos()
+        bounds = self.level.room_corners
+        # ⌜
+        tl_tr_angle = get_angle_rad(bounds[0], bounds[1])  # topleft corner to topright corner angle
+        tl_bl_angle = get_angle_rad(bounds[0], bounds[3])  # topleft corner to bottomleft corner angle
+        if tl_tr_angle < tl_bl_angle:
+            tl_tr_angle += 2 * math.pi  # for comparison, tl_tr must be the larger so increase by revolution
+        # ⌟
+        br_bl_angle = get_angle_rad(bounds[2], bounds[3])  # bottomright corner to bottomleft corner angle
+        br_tr_angle = get_angle_rad(bounds[2], bounds[1])  # bottomright corner to topright corner angle
+        if br_bl_angle < br_tr_angle:
+            br_bl_angle += 2 * math.pi  # for comparison, br_bl must be the larger so increase by revolution
+
         # generate within certain radius from head
         self.target = (head_pos[0] + randint(-self.view_rad, self.view_rad),
                        head_pos[1] + randint(-self.view_rad, self.view_rad))
+
         # continue to randomly generate point until point not in a tile and within room
         repeat = True
         while repeat:
             repeat = False  # assume no repeat required until proven neccessary
-            for tile in tiles:
-                if tile.hitbox.collidepoint(self.target):
-                    self.target = (head_pos[0] + randint(-self.view_rad, self.view_rad),
-                                   head_pos[1] + randint(-self.view_rad, self.view_rad))
-                    print(self.target)
-                    repeat = True  # point has been re-randomized and needs to be tested again
-                    break
+
+            # get and adjust angles to point
+            a1 = get_angle_rad(bounds[0], self.target)
+            if a1 < tl_bl_angle:
+                a1 += 2 * math.pi  # must be between two angles for comparison
+            a2 = get_angle_rad(bounds[2], self.target)
+            if a2 < br_tr_angle:
+                a2 += 2 * math.pi
+
+            # check target inside roomz
+            if not tl_tr_angle >= a1 >= tl_bl_angle or \
+               not br_bl_angle >= a2 >= br_tr_angle:
+                repeat = True  # needs to be randomised and tested again
+
+            # if inside room, check not inside tile
+            else:
+                for tile in tiles:
+                    if tile.hitbox.collidepoint(self.target):
+                        repeat = True  # needs to be randomised and tested again
+                        break
+
+            # if repeat is required, randomise target for next iteration
+            if repeat:
+                self.target = (head_pos[0] + randint(-self.view_rad, self.view_rad),
+                               head_pos[1] + randint(-self.view_rad, self.view_rad))
 
         # find path to new target
         self.path = self.pathfind(tiles)
-        # if no path can be found, will return empty path. Set target to head and try again next frame
+        # if no path can be found, will return empty path. Set target to head and try find target again next frame
         if not self.path:
             self.path = [head_pos]  # path is head
             self.target = [head_pos[0], head_pos[1]]  # target is head

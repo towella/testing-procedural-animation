@@ -44,7 +44,8 @@ class Level:
         # - get level data -
         tmx_data = load_pygame(resource_path(level_data))  # tile map file
         self.room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
-        self.room_corners = [[0, 0], [0, self.room_dim[1]], [self.room_dim[0], self.room_dim[1]], [self.room_dim[0], 0]]  # corners outlining rect
+        # corners outlining rect clockwise
+        self.room_corners = [[0, 0], [self.room_dim[0], 0], [self.room_dim[0], self.room_dim[1]], [0, self.room_dim[1]]]
         self.all_tile_sprites = pygame.sprite.Group()  # contains all tile sprites for ease of updating/scrolling
         self.all_object_sprites = pygame.sprite.Group()
 
@@ -362,7 +363,9 @@ class Level:
                 pygame.draw.circle(self.screen_surface, 'pink', creature.brain.target, 2)
 
             for corner in range(len(self.room_corners)):
+                pygame.draw.circle(self.screen_surface, 'red', self.room_corners[corner], 2)
                 pygame.draw.line(self.screen_surface, 'pink', self.room_corners[corner], self.room_corners[(corner+1) % 4])
 
             for creature in self.creatures:
                 pygame.draw.line(self.screen_surface, "red", player.get_pos(), creature.head.get_pos(), 1)
+                player.pos = creature.head.get_pos()
