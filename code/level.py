@@ -3,7 +3,7 @@ import pygame
 from random import randint
 from pytmx.util_pygame import load_pygame  # allows use of tiled tile map files for pygame use
 # - general -
-from game_data import tile_size, controller_map, fonts
+from game_data import tile_size, controller_map, fonts, tile_cache, tile_cache_granularity
 from support import *
 # - tiles -
 from tiles import StaticTile, CollideableTile, HazardTile
@@ -45,7 +45,11 @@ class Level:
         tmx_data = load_pygame(resource_path(level_data))  # tile map file
         self.room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
         # corners outlining rect clockwise
-        self.room_corners = [[0, 0], [self.room_dim[0], 0], [self.room_dim[0], self.room_dim[1]], [0, self.room_dim[1]]]
+        ht = tile_size//2  # half the tile size (room rect is offset for some reason??)
+        self.room_corners = [[0-ht, 0-ht],
+                             [self.room_dim[0]-ht, 0-ht],
+                             [self.room_dim[0]-ht, self.room_dim[1]-ht],
+                             [0-ht, self.room_dim[1]-ht]]
         self.all_tile_sprites = pygame.sprite.Group()  # contains all tile sprites for ease of updating/scrolling
         self.all_object_sprites = pygame.sprite.Group()
 
@@ -106,6 +110,12 @@ class Level:
 
         elif type == 'CollideableTile':
             for x, y, surface in tiles:
+                # create tile cache if not already completed
+                if surface not in tile_cache.keys():
+                    images = cut_sprite_stack(surface, (tile_size, tile_size))
+                    tile_cache[surface] = self.create_tile_cache(images)
+
+                # create tile
                 tile = CollideableTile((x * tile_size, y * tile_size), (tile_size, tile_size), parallax, surface)
                 sprite_group.append(tile)
                 self.all_tile_sprites.add(tile)
@@ -217,6 +227,31 @@ class Level:
         self.all_tile_sprites.add(tile)
         return sprite_group
 
+    def create_tile_cache(self, images):
+        cache = {}
+
+        # pre-render 360 deg view at 10 deg increments of stack
+        for rot in range(0, 360, tile_cache_granularity):
+            # multiply by 1.5 to account for expansion of image when rotated 45 deg
+            surf = pygame.Surface((tile_size * 1.5, tile_size * 1.5 + len(images) - 1))  # width, height
+
+            # stack images
+            for img in range(len(images)):
+                rot_img = pygame.transform.rotate(images[img], rot)
+                # account for 1.5 multiplier in height
+                surf.blit(rot_img, (0, surf.get_height() - tile_size * 1.5 - img))
+
+            # make transparent bg
+            surf = surf.convert(24)
+            surf.set_colorkey('black')
+            surf.set_alpha(255)
+
+            # cache image
+            cache[rot] = surf
+
+        return cache
+
+
 # -- check methods --
 
     def get_input(self):
@@ -325,14 +360,14 @@ class Level:
                 self.camera.focus(True)'''
 
         # -- UPDATES -- player needs to be before tiles for scroll to function properly
-            # shift room boundary rect
-            self.apply_scroll(scroll_value)  # apply scroll to level systems
-            self.apply_rotation(rot_value, player.get_pos())
             self.player.update(self.collideable, rot_value, dt, scroll_value)  #, self.tiles_in_screen, scroll_value, self.player_spawn)
             # TODO update sprite group
             for creature in self.creatures:
                 creature.update(self.collideable, rot_value, dt, player.get_pos(), scroll_value)
             self.all_tile_sprites.update(scroll_value, rot_value, player.get_pos())
+            # shift room boundary rect
+            self.apply_scroll(scroll_value)  # apply scroll to level systems
+            self.apply_rotation(rot_value, player.get_pos())
 
         # -- RENDER --
 

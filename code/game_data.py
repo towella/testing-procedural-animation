@@ -12,3 +12,6 @@ controller_map = {'square': 0, 'X': 1, 'circle': 2, 'triangle': 3, 'L1': 4, 'R1'
 
 fonts = {'small_font': '../assets/fonts/small_font.png',
          'large_font': '../assets/fonts/large_font.png'}
+
+tile_cache = {}
+tile_cache_granularity = 5

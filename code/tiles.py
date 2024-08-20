@@ -1,5 +1,6 @@
 import pygame
 from support import import_folder, cut_sprite_stack, rotate_point_deg
+from game_data import tile_cache, tile_size, tile_cache_granularity
 
 
 # base tile class with block fill image and normal surface support (also used for images, i.e, one big tile)
@@ -46,6 +47,7 @@ class StaticTile(pygame.sprite.Sprite):
 class CollideableTile(StaticTile):
     def __init__(self, pos, size, parallax, surface):
         super().__init__(pos, size, parallax)  # passing in variables to parent class
+        self.surface = surface  # used for referencing cache as key
         self.images = cut_sprite_stack(surface, size)  # image is passed tile surface
         self.hitbox = self.images[0].get_rect()
         self.hitbox.topleft = pos
@@ -76,10 +78,10 @@ class CollideableTile(StaticTile):
 
     def draw(self, screen, screen_rect):
         if self.hitbox.colliderect(screen_rect):
-            # stack images
-            for img in range(len(self.images)):
-                surf = pygame.transform.rotate(self.images[img], self.rot)
-                screen.blit(surf, (self.pos[0] - surf.get_width()//2, self.pos[1] - surf.get_height()//2 - img))
+            rounded_rot = (self.rot - (self.rot % tile_cache_granularity)) % 360  # round the rotation to granularity interval
+            surf = tile_cache[self.surface][rounded_rot]  # get cached image
+            # blit with accounting for pos (center of tile??)
+            screen.blit(surf, (self.pos[0] - tile_size//2, self.pos[1] - surf.get_height() + tile_size))
 
 
 class HazardTile(CollideableTile):
