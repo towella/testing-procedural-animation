@@ -10,6 +10,7 @@ from tiles import StaticTile, CollideableTile, HazardTile
 # - objects -
 from creature import Creature
 from player import Player
+from boids import Flock
 from trigger import SpawnTrigger, Trigger
 from spawn import Spawn
 # - systems -
@@ -22,30 +23,40 @@ class Level:
         # TODO testing, remove
         self.dev_debug = False
 
-        # level setup
+        # screen setup
         self.screen_surface = screen_surface  # main screen surface
         self.screen_rect = screen_rect
         self.screen_width = screen_surface.get_width()
         self.screen_height = screen_surface.get_height()
 
+        # player vars
         self.starting_spawn = starting_spawn
         self.player_spawn = None  # will be filled after player is initialised
 
         self.controllers = controllers
 
+        # pause and menus
         self.pause = False
         self.pause_pressed = False
 
+        # world rotation
         self.rot_value = 0  # ∆ rotation in deg
         self.rot_rate = 2  # in deg
 
+        # boid simulation
+        num_flocks = 1
+        flock_size = 50
+        use_wind = True
+        use_predator = True
+        self.flocks = [Flock(self.screen_surface, flock_size, use_predator, use_wind) for f in range(num_flocks)]
+
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
-        # - get level data -
+        # -- get level data from Tiled file --
         tmx_data = load_pygame(resource_path(level_data))  # tile map file
         self.room_dim = [tmx_data.width * tile_size, tmx_data.height * tile_size]
         # corners outlining rect clockwise
-        ht = tile_size//2  # half the tile size (room rect is offset for some reason??)
+        ht = tile_size//2  # half the tile size
         self.room_corners = [[0-ht, 0-ht],
                              [self.room_dim[0]-ht, 0-ht],
                              [self.room_dim[0]-ht, self.room_dim[1]-ht],
@@ -251,7 +262,6 @@ class Level:
 
         return cache
 
-
 # -- check methods --
 
     def get_input(self):
@@ -365,13 +375,15 @@ class Level:
             for creature in self.creatures:
                 creature.update(self.collideable, rot_value, dt, player.get_pos(), scroll_value)
             self.all_tile_sprites.update(scroll_value, rot_value, player.get_pos())
+            for flock in self.flocks:
+                flock.update()
             # shift room boundary rect
             self.apply_scroll(scroll_value)  # apply scroll to level systems
             self.apply_rotation(rot_value, player.get_pos())
 
         # -- RENDER --
 
-        # Draw
+        # Draw order
         for layer in self.background_layers:
             self.draw_tile_layer(layer)
         for creature in self.creatures:
@@ -380,6 +392,8 @@ class Level:
         self.draw_tile_layer(self.collideable)
         for layer in self.foreground_layers:
             self.draw_tile_layer(layer)
+        for flock in self.flocks:
+            flock.draw()
 
         # must be after other renders to ensure menu is drawn last
         if self.pause:

@@ -14,4 +14,4 @@ fonts = {'small_font': '../assets/fonts/small_font.png',
          'large_font': '../assets/fonts/large_font.png'}
 
 tile_cache = {}
-tile_cache_granularity = 5
+tile_cache_granularity = 5  # deg step

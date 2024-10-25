@@ -24,8 +24,9 @@ o Make pathfinding work with:
 o Optimise pathfinding
 
 o sprite stacking
-    - cache texture rotations
     - fix tiles popping out of frame
+
+o fix body mask cutting out when sections overlap (sort points into sequence prior to drawing polygon)
 
 --------------------------------------------------------------------
 o Procedurally generated terrain (dungeon terminal game)
