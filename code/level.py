@@ -48,7 +48,8 @@ class Level:
         flock_size = 50
         use_wind = True
         use_predator = True
-        self.flocks = [Flock(self.screen_surface, flock_size, use_predator, use_wind) for f in range(num_flocks)]
+        parallax = (2, 2)
+        self.flocks = [Flock(self.screen_surface, flock_size, use_predator, use_wind, parallax) for f in range(num_flocks)]
 
         dt = 1  # dt starts as 1 because on the first frame we can assume it is 60fps. dt = 1/60 * 60 = 1
 
@@ -376,7 +377,7 @@ class Level:
                 creature.update(self.collideable, rot_value, dt, player.get_pos(), scroll_value)
             self.all_tile_sprites.update(scroll_value, rot_value, player.get_pos())
             for flock in self.flocks:
-                flock.update()
+                flock.update(scroll_value, rot_value, player.get_pos())
             # shift room boundary rect
             self.apply_scroll(scroll_value)  # apply scroll to level systems
             self.apply_rotation(rot_value, player.get_pos())

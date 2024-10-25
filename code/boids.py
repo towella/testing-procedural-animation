@@ -1,14 +1,16 @@
 import pygame
 from random import randint
 import math
-from support import get_distance, lerp1D
+from support import get_distance, lerp1D, rotate_point_deg
 
 minute = 60 * 60  # 60fps * 60 seconds
 
 
 class Flock:
-    def __init__(self, surface, flock_size, use_predator=False, use_wind=False):
+    def __init__(self, surface, flock_size, use_predator=False, use_wind=False, parallax=(1, 1)):
         self.surface = surface
+        self.parallax = parallax  # modifier to scroll_value provided in update
+
         self.chunk_size = 80
         # chunks height and width include 2 buffer chunks as a margin beyond screen view
         self.chunks_width = self.surface.get_width() // self.chunk_size + 2  # number of chunks horizontally
@@ -36,7 +38,7 @@ class Flock:
         self.wind = [0, 0]
         self.new_wind = [0.0, 0.0]  # wind for next transition
 
-    def update(self):
+    def update(self, scroll_value, rot_value, origin=(0, 0)):
         if self.use_wind:
             self.wind_change -= 1
             # lerp wind to new wind if in transitional period
@@ -49,15 +51,17 @@ class Flock:
                 self.new_wind[1] = randint(-self.max_wind * 100, self.max_wind * 100) / 100
                 self.wind_change = randint(self.min_wind_change, self.max_wind_change)
 
-        # update predator
+        # update predator then apply camera
         if self.use_predator:
-            self.predator.update(self.boids, self.wind)
+            self.predator.pred_update(self.boids, self.wind)
+            self.predator.apply_camera(scroll_value, rot_value, origin, self.parallax)
 
         # first update chunks (reset so empty)
         for chunk in self.chunks.keys():
             self.chunks[chunk] = []
         # update boids by chunk
         for b in self.boids:
+            b.apply_camera(scroll_value, rot_value, origin, self.parallax)  # apply camera so in same state as pred
             pos = b.get_pos()
             # find boid chunk index
             y = int(pos[1] // self.chunk_size)
@@ -124,7 +128,7 @@ class Boid:
         self.visual_r = 80  # 50 distance boid can see other boids  MUST BE LESS THAN CHUNK SIZE
 
         self.turn_factor = 0.1   # 0.1 or 0.05 amount boid turns (multiplier)
-        self.screen_margin = 200  # 200 margin from screen edge before turning
+        self.screen_margin = 0  # 200 margin from screen edge before turning
 
         self.matching_factor = 0.05  # loose 0.02 or 0.05 tight, tend towards average velocity (multiplier)
         self.centering_factor = 0.005  # 0.005 0.001 tend towards center of visual flock (multiplier)
@@ -144,7 +148,15 @@ class Boid:
         self.vel[0] = vel[0]
         self.vel[1] = vel[1]
 
-    def update(self, boids, wind, predator=None):
+    def apply_camera(self, scroll_value, rot_value, origin, parallax):
+        # apply scroll with parallax
+        self.pos[0] -= int(scroll_value[0] * parallax[0])
+        self.pos[1] -= int(scroll_value[1] * parallax[1])
+        # apply rotation
+        if rot_value != 0:
+            self.pos = rotate_point_deg(self.pos, origin, rot_value)
+
+    def update(self, boids, wind, predator):
         # steering
         close_dx = 0
         close_dy = 0
@@ -246,18 +258,14 @@ class Boid:
             [self.pos[0] + math.sin(math.radians(self.rot_deg - 90)) * point_sides,
              self.pos[1] + math.cos(math.radians(self.rot_deg - 90)) * point_sides]
         ]
-        pygame.draw.polygon(self.surface, "red", outline)
+        pygame.draw.polygon(self.surface, (30, 30, 30), outline)
 
 
-class BoidPredator:
+class BoidPredator(Boid):
     def __init__(self, surface):
-        self.surface = surface
-        self.rot_deg = 0
-
-        self.pos = [randint(0, surface.get_width()), randint(0, surface.get_height())]  # x, y
-        self.vel = [0, 0]  # x, y
+        super().__init__(surface)
         self.min_speed = 1
-        self.max_speed = 7  # 3 or 5
+        self.max_speed = 7
 
         self.turn_factor = 0.1  # 0.1 or 0.05 amount boid turns (multiplier)
         self.screen_margin = 400  # 200 margin from screen edge before turning
@@ -272,10 +280,8 @@ class BoidPredator:
         self.circling_factor = 0.004
         self.circling_max_speed = 4
 
-    def get_pos(self):
-        return self.pos
-
-    def update(self, boids, wind):
+    # cant be called update as parameters are not the same as parent class update
+    def pred_update(self, boids, wind):
         # alignment and cohesion
         avg_x_pos = 0
         avg_y_pos = 0
@@ -360,4 +366,4 @@ class BoidPredator:
             [self.pos[0] + math.sin(math.radians(self.rot_deg - 90)) * point_sides,
              self.pos[1] + math.cos(math.radians(self.rot_deg - 90)) * point_sides]
         ]
-        pygame.draw.polygon(self.surface, "orange", outline)
+        pygame.draw.polygon(self.surface, "brown", outline)
